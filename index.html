@@ -44,16 +44,16 @@
 </head>
 <body class="flex h-screen overflow-hidden">
 
-    <aside class="w-64 bg-slate-900 border-r border-slate-800 flex flex-col shadow-2xl z-20">
-        <div class="p-6 bg-slate-950 border-b border-slate-800">
-            <h1 class="oswald text-2xl font-black italic tracking-tighter text-blue-500">WC2026 ALBUM</h1>
-            <div class="flex gap-2 mt-4">
+    <aside class="w-80 bg-slate-900 border-r border-slate-800 flex flex-col shadow-2xl z-20">
+        <div class="p-4 bg-slate-950 border-b border-slate-800">
+            <h1 class="oswald text-xl font-black italic tracking-tighter text-blue-500 text-center">WC2026 ALBUM</h1>
+            <div class="flex gap-2 mt-3">
                 <button onclick="exportData()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-[10px] py-1 rounded uppercase font-bold tracking-widest transition">Exporter</button>
                 <button onclick="importData()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-[10px] py-1 rounded uppercase font-bold tracking-widest transition">Importer</button>
             </div>
         </div>
         
-        <nav id="sidebar-nav" class="flex-1 overflow-y-auto p-4 custom-scrollbar"></nav>
+        <nav id="sidebar-nav" class="flex-1 overflow-y-auto p-3 custom-scrollbar"></nav>
     </aside>
 
     <main class="flex-1 flex flex-col overflow-hidden pattern-bg">
@@ -85,8 +85,25 @@
     </main>
 
     <script>
-        // --- DONNÉES ---
-        const teams = ["MEX", "RSA", "KOR", "CZE", "CAN", "BIH", "QAT", "SUI", "BRA", "MAR", "HAI", "SCO", "USA", "PAR", "AUS", "TUR", "GER", "CUW", "CIV", "ECU", "NED", "JPN", "SWE", "TUN", "BEL", "EGY", "IRN", "NZL", "ESP", "CPV", "KSA", "URU", "FRA", "SEN", "IRQ", "NOR", "ARG", "ALG", "AUT", "JOR", "POR", "COD", "UZB", "COL", "ENG", "CRO", "GHA", "PAN"];
+        // --- DONNÉES DES GROUPES (CONFORME À LA PHOTO DU CARNET) ---
+        const groups = [
+            { name: "Groupe A", color: "border-l-4 border-emerald-500", teams: [ {id:"MEX", label:"Mexique"}, {id:"RSA", label:"Afrique du S."}, {id:"KOR", label:"Corée du R."}, {id:"CZE", label:"Tchéquie"} ] },
+            { name: "Groupe B", color: "border-l-4 border-red-500", teams: [ {id:"CAN", label:"Canada"}, {id:"BIH", label:"Bosnie-H."}, {id:"QAT", label:"Qatar"}, {id:"SUI", label:"Suisse"} ] },
+            { name: "Groupe C", color: "border-l-4 border-yellow-500", teams: [ {id:"BRA", label:"Brésil"}, {id:"MAR", label:"Maroc"}, {id:"HAI", label:"Haïti"}, {id:"SCO", label:"Écosse"} ] },
+            { name: "Groupe D", color: "border-l-4 border-blue-500", teams: [ {id:"USA", label:"États-Unis"}, {id:"PAR", label:"Paraguay"}, {id:"AUS", label:"Australie"}, {id:"TUR", label:"Turquie"} ] },
+            { name: "Groupe E", color: "border-l-4 border-orange-500", teams: [ {id:"GER", label:"Allemagne"}, {id:"CUW", label:"Curaçao"}, {id:"CIV", label:"Côte d'Ivoire"}, {id:"ECU", label:"Équateur"} ] },
+            { name: "Groupe F", color: "border-l-4 border-cyan-500", teams: [ {id:"NED", label:"Pays-Bas"}, {id:"JPN", label:"Japon"}, {id:"SWE", label:"Suède"}, {id:"TUN", label:"Tunisie"} ] },
+            { name: "Groupe G", color: "border-l-4 border-purple-400", teams: [ {id:"BEL", label:"Belgique"}, {id:"EGY", label:"Égypte"}, {id:"IRN", label:"Iran"}, {id:"NZL", label:"Nouvelle-Z."} ] },
+            { name: "Groupe H", color: "border-l-4 border-teal-500", teams: [ {id:"ESP", label:"Espagne"}, {id:"CPV", label:"Cap-Vert"}, {id:"KSA", label:"Arabie Saoudite"}, {id:"URU", label:"Uruguay"} ] },
+            { name: "Groupe I", color: "border-l-4 border-indigo-600", teams: [ {id:"FRA", label:"France"}, {id:"SEN", label:"Sénégal"}, {id:"IRQ", label:"Irak"}, {id:"NOR", label:"Norvège"} ] },
+            { name: "Groupe J", color: "border-l-4 border-pink-400", teams: [ {id:"ARG", label:"Argentine"}, {id:"ALG", label:"Algérie"}, {id:"AUT", label:"Autriche"}, {id:"JOR", label:"Jordanie"} ] },
+            { name: "Groupe K", color: "border-l-4 border-rose-600", teams: [ {id:"POR", label:"Portugal"}, {id:"COD", label:"Congo RD"}, {id:"UZB", label:"Ouzbékistan"}, {id:"COL", label:"Colombie"} ] },
+            { name: "Groupe L", color: "border-l-4 border-amber-800", teams: [ {id:"ENG", label:"Angleterre"}, {id:"CRO", label:"Croatie"}, {id:"GHA", label:"Ghana"}, {id:"PAN", label:"Panama"} ] }
+        ];
+
+        // Extraction simple de la liste plate des pays pour la compatibilité avec le reste de ton code
+        const teams = [];
+        groups.forEach(g => g.teams.forEach(t => teams.push(t.id)));
         
         const fwcSections = [
             { id: 'FWC_INTRO1', label: 'Introduction', slots: [1,2,3,4] },
@@ -122,23 +139,43 @@
             document.getElementById('global-percent').innerText = `${percent}%`;
         }
 
+        // RE-GENERATION DU MENU (STYLE CARNET PAR POULES SUR 2 COLONNES)
         function renderSidebar() {
             const container = document.getElementById('sidebar-nav');
-            let html = `<p class="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-4">Général</p>`;
+            let html = `<p class="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-3">Général</p>`;
             
+            // Sections Spéciales FWC
             fwcSections.forEach(sec => {
-                html += `<button onclick="changeSection('${sec.id}')" class="w-full text-left px-3 py-2 rounded-lg mb-1 text-sm font-medium hover:bg-blue-600/20 transition-colors flex items-center gap-2">
-                    <span class="w-2 h-2 rounded-full bg-blue-500"></span> ${sec.label}
+                html += `<button onclick="changeSection('${sec.id}')" class="w-full text-left px-3 py-1.5 rounded-lg mb-1 text-xs font-medium hover:bg-blue-600/20 transition-colors flex items-center gap-2">
+                    <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span> ${sec.label}
                 </button>`;
             });
 
-            html += `<p class="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mt-8 mb-4">Équipes Qualifiées</p>`;
-            teams.forEach(team => {
-                html += `<button onclick="changeSection('${team}')" class="group w-full text-left px-3 py-2 rounded-lg mb-1 text-sm font-medium hover:bg-slate-800 transition-all flex justify-between items-center">
-                    <span class="group-hover:text-blue-400 transition-colors">${team}</span>
-                    <span id="side-stat-${team}" class="text-[10px] bg-slate-800 px-2 py-0.5 rounded border border-slate-700 text-slate-400">0/20</span>
-                </button>`;
+            html += `<p class="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mt-5 mb-3">Poules Coupe du Monde</p>`;
+            
+            // Parcours et affichage des Groupes
+            groups.forEach(group => {
+                html += `
+                <div class="mb-4 bg-slate-950/40 p-2 rounded-xl border border-slate-800/60 ${group.color}">
+                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 px-1">${group.name}</div>
+                    <div class="grid grid-cols-2 gap-1.5">
+                `;
+                
+                group.teams.forEach(team => {
+                    html += `
+                    <button onclick="changeSection('${team.id}')" class="group w-full text-left p-1.5 rounded-md bg-slate-900/60 hover:bg-slate-800 border border-slate-800/40 transition-all flex flex-col justify-between">
+                        <span class="text-[11px] font-bold tracking-tight text-slate-300 group-hover:text-blue-400 transition-colors truncate w-full">${team.label}</span>
+                        <div class="w-full flex justify-between items-center mt-1">
+                            <span class="text-[9px] font-black text-slate-500">${team.id}</span>
+                            <span id="side-stat-${team.id}" class="text-[9px] bg-slate-950 px-1 py-0.2 rounded text-slate-400 border border-slate-800">0/20</span>
+                        </div>
+                    </button>
+                    `;
+                });
+                
+                html += `</div></div>`;
             });
+
             container.innerHTML = html;
             updateSidebarStats();
         }
@@ -150,7 +187,10 @@
                 const el = document.getElementById(`side-stat-${team}`);
                 if(el) {
                     el.innerText = `${count}/20`;
-                    if(count === 20) el.classList.add('bg-green-500/20', 'text-green-400', 'border-green-500/30');
+                    if(count === 20) {
+                        el.classList.remove('bg-slate-950', 'text-slate-400', 'border-slate-800');
+                        el.classList.add('bg-green-500/20', 'text-green-400', 'border-green-500/30');
+                    }
                 }
             });
         }
@@ -169,9 +209,9 @@
             let aspectClass = "aspect-[3/4]";
             let gridSpanClass = "";
             
-            // Format Paysage pour la carte 13 (Nettoyé du padding qui la déformait)
+            // Format Paysage pour la carte 13 nettoyé
             if (!isSpecial && num === 13) {
-                aspectClass = "aspect-auto h-full"; // S'aligne parfaitement sur la hauteur de la ligne
+                aspectClass = "aspect-auto h-full";
                 gridSpanClass = "col-span-2";
             }
 
@@ -222,7 +262,13 @@
                 bookContainer.appendChild(grid);
             } 
             else {
-                title.innerText = `Équipe : ${currentSection}`;
+                // Trouver le nom complet du pays pour le titre principal
+                let fullTeamName = currentSection;
+                for (let g of groups) {
+                    let tMatch = g.teams.find(t => t.id === currentSection);
+                    if(tMatch) { fullTeamName = tMatch.label; break; }
+                }
+                title.innerText = `Équipe : ${fullTeamName} (${currentSection})`;
                 
                 const bookLayout = document.createElement('div');
                 bookLayout.className = "flex flex-col lg:flex-row gap-6 bg-slate-950/40 p-4 lg:p-8 rounded-3xl border border-slate-800/80 shadow-2xl backdrop-blur-sm relative";
@@ -239,7 +285,7 @@
                 const leftGrid = document.createElement('div');
                 leftGrid.className = "grid grid-cols-4 gap-3";
                 
-                // Insertion des 2 cellules vides de décalage
+                // Deux cellules vides au début de la page gauche
                 const dummy1 = document.createElement('div');
                 dummy1.className = "aspect-[3/4] pointer-events-none opacity-0 hidden sm:block";
                 const dummy2 = document.createElement('div');
@@ -261,18 +307,19 @@
                 const rightGrid = document.createElement('div');
                 rightGrid.className = "grid grid-cols-4 gap-3";
                 
-                // Remplissage classique des cartes 11 à 17
+                // Insertion des cartes de 11 à 17 normalement
                 for (let i = 11; i <= 17; i++) {
                     const card = createCardElement(`${currentSection}-${i}`, false, i.toString());
                     rightGrid.appendChild(card);
                 }
 
-                // AJOUT DU DÉCALAGE : Case vide (placeholder) pour pousser la ligne 18, 19, 20 d'un cran vers la droite
-                const rowShiftDummy = document.createElement('div');
-                rowShiftDummy.className = "aspect-[3/4] pointer-events-none opacity-0";
-                rightGrid.appendChild(rowShiftDummy);
+                // CORRECTION DESSIN : Insertion d'une case vide invisible juste sous la case 14
+                // Cela pousse la case 18 à prendre la place sous la case 15, la 19 sous la 16 et la 20 sous la 17
+                const drawShiftDummy = document.createElement('div');
+                drawShiftDummy.className = "aspect-[3/4] pointer-events-none opacity-0";
+                rightGrid.appendChild(drawShiftDummy);
 
-                // Remplissage des cartes restantes 18, 19, 20 après le décalage
+                // Insertion des trois dernières cartes (18, 19, 20) décalées
                 for (let i = 18; i <= 20; i++) {
                     const card = createCardElement(`${currentSection}-${i}`, false, i.toString());
                     rightGrid.appendChild(card);
