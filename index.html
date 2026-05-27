@@ -163,6 +163,7 @@
         }
 
         // Fonction d'aide pour générer l'élément HTML d'une carte
+        // Fonction d'aide pour générer l'élément HTML d'une carte
         function createCardElement(id, isSpecial, numStr) {
             const owned = userAlbumData[id] || false;
             const card = document.createElement('div');
@@ -171,31 +172,41 @@
             // Gestion de la carte 13 en format Paysage (Axe Horizontal)
             let aspectClass = "aspect-[3/4]";
             let gridSpanClass = "";
+            let paddingClass = ""; // Pour décoller la carte 13
+            
             if (!isSpecial && num === 13) {
                 aspectClass = "aspect-[4/3]";
                 gridSpanClass = "col-span-2";
+                paddingClass = "p-2.5"; // Réduit la taille interne et crée l'espace visuel autour
             }
 
-            card.className = `group relative ${aspectClass} ${gridSpanClass} rounded-xl border-2 cursor-pointer transition-all duration-300 flex items-center justify-center overflow-hidden
+            // Le conteneur extérieur gère la place dans la grille et le padding
+            card.className = `${gridSpanClass} ${paddingClass} w-full h-full`;
+            
+            // Le sous-conteneur gère le rendu visuel du sticker (bordures, clics, etc.)
+            const innerCard = document.createElement('div');
+            innerCard.className = `group relative w-full h-full ${aspectClass} rounded-xl border-2 cursor-pointer transition-all duration-300 flex items-center justify-center overflow-hidden
                 ${owned ? 'sticker-owned border-transparent' : 'border-slate-800 bg-slate-900/40 hover:border-slate-600'}`;
             
-            card.onclick = () => toggleSticker(id);
+            innerCard.onclick = () => toggleSticker(id);
 
             if (owned) {
-                card.innerHTML = `
+                innerCard.innerHTML = `
                     <div class="absolute inset-0 ${isSpecial ? 'holographic' : 'bg-gradient-to-br from-blue-700 to-indigo-900'}"></div>
                     <div class="absolute inset-0 opacity-20 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]"></div>
                     <span class="z-10 oswald text-3xl font-black italic text-white drop-shadow-lg group-hover:scale-110 transition-transform">${numStr}</span>
                     <div class="absolute top-2 left-2 text-[10px] font-bold text-white/50 z-10">${id.split('-')[0]}</div>
                 `;
             } else {
-                card.innerHTML = `
+                innerCard.innerHTML = `
                     <div class="text-center p-2 z-10">
                         <div class="oswald text-slate-600 text-2xl font-bold group-hover:text-slate-400 transition-colors">${numStr}</div>
                         <div class="text-[10px] text-slate-700 font-black tracking-wider uppercase">${id.split('-')[0]}</div>
                     </div>
                 `;
             }
+            
+            card.appendChild(innerCard);
             return card;
         }
 
