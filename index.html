@@ -26,7 +26,7 @@
 
         /* Look sticker collé */
         .sticker-owned {
-            transform: rotate(-1deg) scale(0.98);
+            transform: rotate(-0.5deg) scale(0.98);
             box-shadow: 4px 4px 10px rgba(0,0,0,0.5);
             border: 2px solid #fbbf24 !important; /* Bordure dorée */
         }
@@ -44,8 +44,7 @@
 </head>
 <body class="flex h-screen overflow-hidden">
 
-    <!-- SIDEBAR -->
-    <aside class="w-64 bg-slate-900 border-r border-slate-800 flex flex-col shadow-2xl">
+    <aside class="w-64 bg-slate-900 border-r border-slate-800 flex flex-col shadow-2xl z-20">
         <div class="p-6 bg-slate-950 border-b border-slate-800">
             <h1 class="oswald text-2xl font-black italic tracking-tighter text-blue-500">WC2026 ALBUM</h1>
             <div class="flex gap-2 mt-4">
@@ -55,13 +54,10 @@
         </div>
         
         <nav id="sidebar-nav" class="flex-1 overflow-y-auto p-4 custom-scrollbar">
-            <!-- Injecté par JS -->
-        </nav>
+            </nav>
     </aside>
 
-    <!-- MAIN CONTENT -->
     <main class="flex-1 flex flex-col overflow-hidden pattern-bg">
-        <!-- HEADER STATS -->
         <header class="bg-slate-900/80 backdrop-blur-md border-b border-slate-800 p-4 flex items-center justify-between z-10">
             <div class="flex-1 max-w-xl">
                 <div class="flex justify-between mb-1 items-end">
@@ -78,16 +74,14 @@
             </div>
         </header>
 
-        <!-- GRID ALBUM -->
-        <div class="flex-1 overflow-y-auto p-8 custom-scrollbar">
-            <div class="max-w-6xl mx-auto">
-                <h2 id="section-title" class="oswald text-5xl font-black text-white mb-10 uppercase italic tracking-tighter">
+        <div class="flex-1 overflow-y-auto p-6 custom-scrollbar flex flex-col items-center">
+            <div class="w-full max-w-7xl">
+                <h2 id="section-title" class="oswald text-4xl font-black text-white mb-6 uppercase italic tracking-tighter text-center lg:text-left">
                     Chargement...
                 </h2>
                 
-                <div id="album-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-                    <!-- Les stickers s'affichent ici -->
-                </div>
+                <div id="album-book-view" class="w-full">
+                    </div>
             </div>
         </div>
     </main>
@@ -168,56 +162,116 @@
             renderMainContent();
         }
 
-        function renderMainContent() {
-            const container = document.getElementById('album-grid');
-            const title = document.getElementById('section-title');
-            container.innerHTML = '';
+        // Fonction d'aide pour générer l'élément HTML d'une carte
+        function createCardElement(id, isSpecial, numStr) {
+            const owned = userAlbumData[id] || false;
+            const card = document.createElement('div');
+            const num = parseInt(numStr);
             
-            let stickersToShow = [];
-            let isSpecial = false;
+            // Gestion de la carte 13 en format Paysage (Axe Horizontal)
+            let aspectClass = "aspect-[3/4]";
+            let gridSpanClass = "";
+            if (!isSpecial && num === 13) {
+                aspectClass = "aspect-[4/3]";
+                gridSpanClass = "col-span-2";
+            }
 
+            card.className = `group relative ${aspectClass} ${gridSpanClass} rounded-xl border-2 cursor-pointer transition-all duration-300 flex items-center justify-center overflow-hidden
+                ${owned ? 'sticker-owned border-transparent' : 'border-slate-800 bg-slate-900/40 hover:border-slate-600'}`;
+            
+            card.onclick = () => toggleSticker(id);
+
+            if (owned) {
+                card.innerHTML = `
+                    <div class="absolute inset-0 ${isSpecial ? 'holographic' : 'bg-gradient-to-br from-blue-700 to-indigo-900'}"></div>
+                    <div class="absolute inset-0 opacity-20 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]"></div>
+                    <span class="z-10 oswald text-3xl font-black italic text-white drop-shadow-lg group-hover:scale-110 transition-transform">${numStr}</span>
+                    <div class="absolute top-2 left-2 text-[10px] font-bold text-white/50 z-10">${id.split('-')[0]}</div>
+                `;
+            } else {
+                card.innerHTML = `
+                    <div class="text-center p-2 z-10">
+                        <div class="oswald text-slate-600 text-2xl font-bold group-hover:text-slate-400 transition-colors">${numStr}</div>
+                        <div class="text-[10px] text-slate-700 font-black tracking-wider uppercase">${id.split('-')[0]}</div>
+                    </div>
+                `;
+            }
+            return card;
+        }
+
+        function renderMainContent() {
+            const bookContainer = document.getElementById('album-book-view');
+            const title = document.getElementById('section-title');
+            bookContainer.innerHTML = '';
+            
+            // CAS DES SECTIONS SPÉCIALES FWC
             if (currentSection.startsWith('FWC')) {
                 const sec = fwcSections.find(s => s.id === currentSection);
                 title.innerText = sec.label;
-                stickersToShow = sec.slots.map(n => `FWC-${n}`);
-                isSpecial = true;
-            } else {
+                
+                const grid = document.createElement('div');
+                grid.className = "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 bg-slate-900/30 p-6 rounded-2xl border border-slate-800/60";
+                
+                sec.slots.forEach(n => {
+                    const card = createCardElement(`FWC-${n}`, true, n.toString());
+                    grid.appendChild(card);
+                });
+                bookContainer.appendChild(grid);
+            } 
+            // CAS DES ÉQUIPES (DOUBLE PAGE STYLISÉE)
+            else {
                 title.innerText = `Équipe : ${currentSection}`;
-                for(let i=1; i<=20; i++) stickersToShow.push(`${currentSection}-${i}`);
-            }
-
-            stickersToShow.forEach(id => {
-                const owned = userAlbumData[id] || false;
-                const card = document.createElement('div');
                 
-                card.className = `group relative aspect-[3/4] rounded-xl border-2 cursor-pointer transition-all duration-300 flex items-center justify-center overflow-hidden
-                    ${owned ? 'sticker-owned border-transparent' : 'border-slate-800 bg-slate-900/50 hover:border-slate-600'}`;
+                // Conteneur principal simulant le livre ouvert
+                const bookLayout = document.createElement('div');
+                bookLayout.className = "flex flex-col lg:flex-row gap-6 bg-slate-950/40 p-4 lg:p-8 rounded-3xl border border-slate-800/80 shadow-2xl backdrop-blur-sm relative";
                 
-                card.onclick = () => toggleSticker(id);
+                // Ligne de reliure centrale (visible uniquement sur grand écran)
+                const spine = document.createElement('div');
+                spine.className = "hidden lg:block absolute left-1/2 top-0 bottom-0 w-[2px] bg-gradient-to-b from-transparent via-slate-800 to-transparent transform -translate-x-1/2";
+                bookLayout.appendChild(spine);
 
-                if (owned) {
-                    card.innerHTML = `
-                        <div class="absolute inset-0 ${isSpecial ? 'holographic' : 'bg-gradient-to-br from-blue-700 to-indigo-900'}"></div>
-                        <div class="absolute inset-0 opacity-20 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]"></div>
-                        <span class="z-10 oswald text-3xl font-black italic text-white drop-shadow-lg group-hover:scale-110 transition-transform">${id.split('-')[1]}</span>
-                        <div class="absolute top-1 left-1 text-[8px] font-bold text-white/50 z-10">${id.split('-')[0]}</div>
-                    `;
-                } else {
-                    card.innerHTML = `
-                        <div class="text-center">
-                            <div class="oswald text-slate-700 text-xl font-bold">${id.split('-')[1]}</div>
-                            <div class="text-[10px] text-slate-800 font-black">${id.split('-')[0]}</div>
-                        </div>
-                    `;
+                // --- PAGE GAUCHE (Stickers 1 à 10) ---
+                const leftPage = document.createElement('div');
+                leftPage.className = "flex-1 flex flex-col";
+                leftPage.innerHTML = `<div class="oswald text-slate-500 font-bold tracking-widest text-xs mb-4 uppercase border-b border-slate-800/60 pb-2 flex justify-between"><span>Page Gauche</span> <span>${currentSection} 1-10</span></div>`;
+                
+                // Grille 4 colonnes pour la page gauche
+                const leftGrid = document.createElement('div');
+                leftGrid.className = "grid grid-cols-4 gap-3";
+                
+                for (let i = 1; i <= 10; i++) {
+                    const card = createCardElement(`${currentSection}-${i}`, false, i.toString());
+                    leftGrid.appendChild(card);
                 }
-                container.appendChild(card);
-            });
+                leftPage.appendChild(leftGrid);
+
+                // --- PAGE DROITE (Stickers 11 à 20) ---
+                const rightPage = document.createElement('div');
+                rightPage.className = "flex-1 flex flex-col mt-8 lg:mt-0";
+                rightPage.innerHTML = `<div class="oswald text-slate-500 font-bold tracking-widest text-xs mb-4 uppercase border-b border-slate-800/60 pb-2 flex justify-between"><span>${currentSection} 11-20</span> <span>Page Droite</span></div>`;
+                
+                // Grille 4 colonnes pour la page droite
+                const rightGrid = document.createElement('div');
+                rightGrid.className = "grid grid-cols-4 gap-3";
+                
+                for (let i = 11; i <= 20; i++) {
+                    const card = createCardElement(`${currentSection}-${i}`, false, i.toString());
+                    rightGrid.appendChild(card);
+                }
+                rightPage.appendChild(rightGrid);
+
+                // Assemblage de la double-page
+                bookLayout.appendChild(leftPage);
+                bookLayout.appendChild(rightPage);
+                bookContainer.appendChild(bookLayout);
+            }
         }
 
         // --- FONCTIONS DE PARTAGE (SYNC MANUELLE) ---
 
         window.exportData = () => {
-            const dataStr = btoa(JSON.stringify(userAlbumData)); // Encodage simple
+            const dataStr = btoa(JSON.stringify(userAlbumData));
             const tempInput = document.createElement('input');
             document.body.appendChild(tempInput);
             tempInput.value = dataStr;
