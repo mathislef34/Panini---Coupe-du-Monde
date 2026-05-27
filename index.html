@@ -53,8 +53,7 @@
             </div>
         </div>
         
-        <nav id="sidebar-nav" class="flex-1 overflow-y-auto p-4 custom-scrollbar">
-            </nav>
+        <nav id="sidebar-nav" class="flex-1 overflow-y-auto p-4 custom-scrollbar"></nav>
     </aside>
 
     <main class="flex-1 flex flex-col overflow-hidden pattern-bg">
@@ -80,8 +79,7 @@
                     Chargement...
                 </h2>
                 
-                <div id="album-book-view" class="w-full">
-                    </div>
+                <div id="album-book-view" class="w-full"></div>
             </div>
         </div>
     </main>
@@ -170,16 +168,14 @@
             
             let aspectClass = "aspect-[3/4]";
             let gridSpanClass = "";
-            let paddingClass = ""; 
             
-            // Format Paysage Réduit pour la carte 13
+            // Format Paysage pour la carte 13 (Nettoyé du padding qui la déformait)
             if (!isSpecial && num === 13) {
-                aspectClass = "aspect-[4/3]";
+                aspectClass = "aspect-auto h-full"; // S'aligne parfaitement sur la hauteur de la ligne
                 gridSpanClass = "col-span-2";
-                paddingClass = "p-2.5"; // Crée l'espace d'isolation tout autour
             }
 
-            card.className = `${gridSpanClass} ${paddingClass} w-full h-full`;
+            card.className = `${gridSpanClass} w-full h-full`;
             
             const innerCard = document.createElement('div');
             innerCard.className = `group relative w-full h-full ${aspectClass} rounded-xl border-2 cursor-pointer transition-all duration-300 flex items-center justify-center overflow-hidden
@@ -265,10 +261,23 @@
                 const rightGrid = document.createElement('div');
                 rightGrid.className = "grid grid-cols-4 gap-3";
                 
-                for (let i = 11; i <= 20; i++) {
+                // Remplissage classique des cartes 11 à 17
+                for (let i = 11; i <= 17; i++) {
                     const card = createCardElement(`${currentSection}-${i}`, false, i.toString());
                     rightGrid.appendChild(card);
                 }
+
+                // AJOUT DU DÉCALAGE : Case vide (placeholder) pour pousser la ligne 18, 19, 20 d'un cran vers la droite
+                const rowShiftDummy = document.createElement('div');
+                rowShiftDummy.className = "aspect-[3/4] pointer-events-none opacity-0";
+                rightGrid.appendChild(rowShiftDummy);
+
+                // Remplissage des cartes restantes 18, 19, 20 après le décalage
+                for (let i = 18; i <= 20; i++) {
+                    const card = createCardElement(`${currentSection}-${i}`, false, i.toString());
+                    rightGrid.appendChild(card);
+                }
+                
                 rightPage.appendChild(rightGrid);
 
                 bookLayout.appendChild(leftPage);
