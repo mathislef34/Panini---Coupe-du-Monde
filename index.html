@@ -85,6 +85,14 @@
     </main>
 
     <script>
+        // --- DONNÉES DES SECTIONS SPÉCIALES (INTRO & LÉGENDES) ---
+        const fwcSections = [
+            { id: 'FWC_INTRO1', label: 'Introduction', slots: [1,2,3,4] },
+            { id: 'FWC_INTRO2', label: 'Villes Hôtes', slots: [5,6,7,8] },
+            { id: 'FWC_HIST1', label: 'Légendes I', slots: [9,10,11,12,13] },
+            { id: 'FWC_HIST2', label: 'Légendes II', slots: [14,15,16,17,18,19] }
+        ];
+
         // --- DONNÉES DES GROUPES (CONFORME À LA PHOTO DU CARNET) ---
         const groups = [
             { name: "Groupe A", color: "border-l-4 border-emerald-500", teams: [ {id:"MEX", label:"Mexique"}, {id:"RSA", label:"Afrique du S."}, {id:"KOR", label:"Corée du R."}, {id:"CZE", label:"Tchéquie"} ] },
@@ -101,17 +109,9 @@
             { name: "Groupe L", color: "border-l-4 border-amber-800", teams: [ {id:"ENG", label:"Angleterre"}, {id:"CRO", label:"Croatie"}, {id:"GHA", label:"Ghana"}, {id:"PAN", label:"Panama"} ] }
         ];
 
-        // Extraction simple de la liste plate des pays pour la compatibilité avec le reste de ton code
         const teams = [];
         groups.forEach(g => g.teams.forEach(t => teams.push(t.id)));
         
-        const fwcSections = [
-            { id: 'FWC_INTRO1', label: 'Introduction', slots: [1,2,3,4] },
-            { id: 'FWC_INTRO2', label: 'Villes Hôtes', slots: [5,6,7,8] },
-            { id: 'FWC_HIST1', label: 'Légendes I', slots: [9,10,11,12,13] },
-            { id: 'FWC_HIST2', label: 'Légendes II', slots: [14,15,16,17,18,19] }
-        ];
-
         let userAlbumData = JSON.parse(localStorage.getItem('wc2026_album')) || {};
         let currentSection = 'FWC_INTRO1';
 
@@ -139,21 +139,30 @@
             document.getElementById('global-percent').innerText = `${percent}%`;
         }
 
-        // RE-GENERATION DU MENU (STYLE CARNET PAR POULES SUR 2 COLONNES)
+        // GENERATION DU MENU PAR POULES
         function renderSidebar() {
             const container = document.getElementById('sidebar-nav');
-            let html = `<p class="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-3">Général</p>`;
+            let html = "";
             
-            // Sections Spéciales FWC
+            // Insertion des pages d'introduction / Légendes au tout début (Style 2 colonnes ramassé)
+            html += `
+            <div class="mb-4 bg-slate-950/60 p-2 rounded-xl border border-blue-500/30 border-l-4 border-l-blue-500">
+                <div class="text-[10px] font-bold text-blue-400 uppercase tracking-wider mb-1.5 px-1">Intro & Légendes</div>
+                <div class="grid grid-cols-2 gap-1.5">
+            `;
             fwcSections.forEach(sec => {
-                html += `<button onclick="changeSection('${sec.id}')" class="w-full text-left px-3 py-1.5 rounded-lg mb-1 text-xs font-medium hover:bg-blue-600/20 transition-colors flex items-center gap-2">
-                    <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span> ${sec.label}
-                </button>`;
+                html += `
+                <button onclick="changeSection('${sec.id}')" class="group w-full text-left p-1.5 rounded-md bg-slate-900/60 hover:bg-slate-800 border border-slate-800/40 transition-all flex justify-between items-center">
+                    <span class="text-[11px] font-bold text-slate-300 group-hover:text-blue-400 transition-colors truncate">${sec.label}</span>
+                    <span id="side-stat-${sec.id}" class="text-[9px] bg-slate-950 px-1 rounded text-slate-400 border border-slate-800">0/${sec.slots.length}</span>
+                </button>
+                `;
             });
+            html += `</div></div>`;
 
-            html += `<p class="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mt-5 mb-3">Poules Coupe du Monde</p>`;
+            html += `<p class="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mt-2 mb-3">Poules Coupe du Monde</p>`;
             
-            // Parcours et affichage des Groupes
+            // Affichage des Groupes de A à L
             groups.forEach(group => {
                 html += `
                 <div class="mb-4 bg-slate-950/40 p-2 rounded-xl border border-slate-800/60 ${group.color}">
@@ -181,6 +190,18 @@
         }
 
         function updateSidebarStats() {
+            // Stats pour les sections spéciales FWC
+            fwcSections.forEach(sec => {
+                let count = 0;
+                sec.slots.forEach(n => { if(userAlbumData[`FWC-${n}`]) count++; });
+                const el = document.getElementById(`side-stat-${sec.id}`);
+                if(el) {
+                    el.innerText = `${count}/${sec.slots.length}`;
+                    if(count === sec.slots.length) el.classList.add('bg-green-500/20', 'text-green-400', 'border-green-500/30');
+                }
+            });
+
+            // Stats pour les pays
             teams.forEach(team => {
                 let count = 0;
                 for(let i=1; i<=20; i++) if(userAlbumData[`${team}-${i}`]) count++;
@@ -200,7 +221,6 @@
             renderMainContent();
         }
 
-        // Génère le conteneur de cellule de carte
         function createCardElement(id, isSpecial, numStr) {
             const owned = userAlbumData[id] || false;
             const card = document.createElement('div');
@@ -209,7 +229,6 @@
             let aspectClass = "aspect-[3/4]";
             let gridSpanClass = "";
             
-            // Format Paysage pour la carte 13 nettoyé
             if (!isSpecial && num === 13) {
                 aspectClass = "aspect-auto h-full";
                 gridSpanClass = "col-span-2";
@@ -250,7 +269,7 @@
             
             if (currentSection.startsWith('FWC')) {
                 const sec = fwcSections.find(s => s.id === currentSection);
-                title.innerText = sec.label;
+                title.innerText = `Section Spéciale : ${sec.label}`;
                 
                 const grid = document.createElement('div');
                 grid.className = "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 bg-slate-900/30 p-6 rounded-2xl border border-slate-800/60";
@@ -262,7 +281,6 @@
                 bookContainer.appendChild(grid);
             } 
             else {
-                // Trouver le nom complet du pays pour le titre principal
                 let fullTeamName = currentSection;
                 for (let g of groups) {
                     let tMatch = g.teams.find(t => t.id === currentSection);
@@ -277,7 +295,7 @@
                 spine.className = "hidden lg:block absolute left-1/2 top-0 bottom-0 w-[2px] bg-gradient-to-b from-transparent via-slate-800 to-transparent transform -translate-x-1/2";
                 bookLayout.appendChild(spine);
 
-                // --- PAGE GAUCHE (1 à 10 avec décalage) ---
+                // --- PAGE GAUCHE ---
                 const leftPage = document.createElement('div');
                 leftPage.className = "flex-1 flex flex-col";
                 leftPage.innerHTML = `<div class="oswald text-slate-500 font-bold tracking-widest text-xs mb-4 uppercase border-b border-slate-800/60 pb-2 flex justify-between"><span>Page Gauche</span> <span>${currentSection} 1-10</span></div>`;
@@ -285,7 +303,6 @@
                 const leftGrid = document.createElement('div');
                 leftGrid.className = "grid grid-cols-4 gap-3";
                 
-                // Deux cellules vides au début de la page gauche
                 const dummy1 = document.createElement('div');
                 dummy1.className = "aspect-[3/4] pointer-events-none opacity-0 hidden sm:block";
                 const dummy2 = document.createElement('div');
@@ -299,7 +316,7 @@
                 }
                 leftPage.appendChild(leftGrid);
 
-                // --- PAGE DROITE (11 à 20) ---
+                // --- PAGE DROITE ---
                 const rightPage = document.createElement('div');
                 rightPage.className = "flex-1 flex flex-col mt-8 lg:mt-0";
                 rightPage.innerHTML = `<div class="oswald text-slate-500 font-bold tracking-widest text-xs mb-4 uppercase border-b border-slate-800/60 pb-2 flex justify-between"><span>${currentSection} 11-20</span> <span>Page Droite</span></div>`;
@@ -307,19 +324,16 @@
                 const rightGrid = document.createElement('div');
                 rightGrid.className = "grid grid-cols-4 gap-3";
                 
-                // Insertion des cartes de 11 à 17 normalement
                 for (let i = 11; i <= 17; i++) {
                     const card = createCardElement(`${currentSection}-${i}`, false, i.toString());
                     rightGrid.appendChild(card);
                 }
 
-                // CORRECTION DESSIN : Insertion d'une case vide invisible juste sous la case 14
-                // Cela pousse la case 18 à prendre la place sous la case 15, la 19 sous la 16 et la 20 sous la 17
+                // Espace vide sous la case 14
                 const drawShiftDummy = document.createElement('div');
                 drawShiftDummy.className = "aspect-[3/4] pointer-events-none opacity-0";
                 rightGrid.appendChild(drawShiftDummy);
 
-                // Insertion des trois dernières cartes (18, 19, 20) décalées
                 for (let i = 18; i <= 20; i++) {
                     const card = createCardElement(`${currentSection}-${i}`, false, i.toString());
                     rightGrid.appendChild(card);
@@ -333,7 +347,7 @@
             }
         }
 
-        // --- FONCTIONS DE PARTAGE (SYNC MANUELLE) ---
+        // --- FONCTIONS DE PARTAGE ---
 
         window.exportData = () => {
             const dataStr = btoa(JSON.stringify(userAlbumData));
