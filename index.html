@@ -218,7 +218,7 @@
                 });
                 bookContainer.appendChild(grid);
             } 
-            // CAS DES ÉQUIPES (DOUBLE PAGE STYLISÉE)
+            // CAS DES ÉQUIPES (DOUBLE PAGE STYLISÉE AVEC DÉCALAGE)
             else {
                 title.innerText = `Équipe : ${currentSection}`;
                 
@@ -231,15 +231,25 @@
                 spine.className = "hidden lg:block absolute left-1/2 top-0 bottom-0 w-[2px] bg-gradient-to-b from-transparent via-slate-800 to-transparent transform -translate-x-1/2";
                 bookLayout.appendChild(spine);
 
-                // --- PAGE GAUCHE (Stickers 1 à 10) ---
+                // --- PAGE GAUCHE (Stickers 1 à 10 avec décalage de 2 cases) ---
                 const leftPage = document.createElement('div');
                 leftPage.className = "flex-1 flex flex-col";
                 leftPage.innerHTML = `<div class="oswald text-slate-500 font-bold tracking-widest text-xs mb-4 uppercase border-b border-slate-800/60 pb-2 flex justify-between"><span>Page Gauche</span> <span>${currentSection} 1-10</span></div>`;
                 
-                // Grille 4 colonnes pour la page gauche
+                // Grille forcée à 4 colonnes pour gérer l'alignement précis
                 const leftGrid = document.createElement('div');
                 leftGrid.className = "grid grid-cols-4 gap-3";
                 
+                // AJOUT DU DÉCALAGE : On insère 2 cases vides au tout début sur grand écran (ou partout pour garder la structure)
+                const dummy1 = document.createElement('div');
+                dummy1.className = "aspect-[3/4] pointer-events-none opacity-0 hidden sm:block"; // Invisible et ne bloque pas les clics
+                const dummy2 = document.createElement('div');
+                dummy2.className = "aspect-[3/4] pointer-events-none opacity-0 hidden sm:block";
+                
+                leftGrid.appendChild(dummy1);
+                leftGrid.appendChild(dummy2);
+                
+                // On ajoute ensuite les cartes 1 à 10
                 for (let i = 1; i <= 10; i++) {
                     const card = createCardElement(`${currentSection}-${i}`, false, i.toString());
                     leftGrid.appendChild(card);
@@ -251,7 +261,6 @@
                 rightPage.className = "flex-1 flex flex-col mt-8 lg:mt-0";
                 rightPage.innerHTML = `<div class="oswald text-slate-500 font-bold tracking-widest text-xs mb-4 uppercase border-b border-slate-800/60 pb-2 flex justify-between"><span>${currentSection} 11-20</span> <span>Page Droite</span></div>`;
                 
-                // Grille 4 colonnes pour la page droite
                 const rightGrid = document.createElement('div');
                 rightGrid.className = "grid grid-cols-4 gap-3";
                 
