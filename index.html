@@ -6,11 +6,11 @@
     <title>Mon Album Virtuel - Coupe du Monde 2026</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;700&family=Inter:wght@400;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: white; }
         .oswald { font-family: 'Oswald', sans-serif; }
 
-        /* Effet Holographique pour stickers FWC */
         .holographic {
             background: linear-gradient(135deg, #ff0080, #7928ca, #0070f3, #00dfd8);
             background-size: 400% 400%;
@@ -24,11 +24,10 @@
             100% { background-position: 0% 50%; }
         }
 
-        /* Look sticker collé */
         .sticker-owned {
             transform: rotate(-0.5deg) scale(0.98);
             box-shadow: 4px 4px 10px rgba(0,0,0,0.5);
-            border: 2px solid #fbbf24 !important; /* Bordure dorée */
+            border: 2px solid #fbbf24 !important;
         }
 
         .custom-scrollbar::-webkit-scrollbar { width: 5px; }
@@ -51,6 +50,9 @@
                 <button onclick="exportData()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-[10px] py-1 rounded uppercase font-bold tracking-widest transition">Exporter</button>
                 <button onclick="importData()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-[10px] py-1 rounded uppercase font-bold tracking-widest transition">Importer</button>
             </div>
+            <button onclick="changeSection('DOUBLONS_MGR')" class="w-full mt-2 bg-gradient-to-r from-amber-600 to-yellow-500 hover:from-amber-500 hover:to-yellow-400 text-white text-xs py-2 rounded uppercase font-black tracking-wider transition shadow-lg">
+                ✨ Scanner & Doublons
+            </button>
         </div>
         
         <nav id="sidebar-nav" class="flex-1 overflow-y-auto p-3 custom-scrollbar"></nav>
@@ -84,8 +86,11 @@
         </div>
     </main>
 
+    <video id="video-feed" class="hidden" autoplay playsinline></video>
+    <canvas id="capture-canvas" class="hidden"></canvas>
+
     <script>
-        // --- DONNÉES DES SECTIONS SPÉCIALES (INTRO & LÉGENDES) ---
+        // --- DONNÉES DES SECTIONS SPÉCIALES ---
         const fwcSections = [
             { id: 'FWC_INTRO1', label: 'Introduction', slots: [1,2,3,4] },
             { id: 'FWC_INTRO2', label: 'Villes Hôtes', slots: [5,6,7,8] },
@@ -93,7 +98,7 @@
             { id: 'FWC_HIST2', label: 'Légendes II', slots: [14,15,16,17,18,19] }
         ];
 
-        // --- DONNÉES DES GROUPES (CONFORME À LA PHOTO DU CARNET) ---
+        // --- DONNÉES DES GROUPES ---
         const groups = [
             { name: "Groupe A", color: "border-l-4 border-emerald-500", teams: [ {id:"MEX", label:"Mexique"}, {id:"RSA", label:"Afrique du S."}, {id:"KOR", label:"Corée du R."}, {id:"CZE", label:"Tchéquie"} ] },
             { name: "Groupe B", color: "border-l-4 border-red-500", teams: [ {id:"CAN", label:"Canada"}, {id:"BIH", label:"Bosnie-H."}, {id:"QAT", label:"Qatar"}, {id:"SUI", label:"Suisse"} ] },
@@ -112,10 +117,34 @@
         const teams = [];
         groups.forEach(g => g.teams.forEach(t => teams.push(t.id)));
         
+        // --- ADAPTATION STOCKAGE : Conversion Ancien format (boolean) vers Nouveau (nombre entier) ---
         let userAlbumData = JSON.parse(localStorage.getItem('wc2026_album')) || {};
-        let currentSection = 'FWC_INTRO1';
+        Object.keys(userAlbumData).forEach(key => {
+            if (typeof userAlbumData[key] === 'boolean') {
+                userAlbumData[key] = userAlbumData[key] ? 1 : 0;
+            }
+        });
 
-        // --- LOGIQUE CORE ---
+        let currentSection = 'FWC_INTRO1';
+        let ocrWorker = null;
+        let isScanning = false;
+        let scanMode = 'ADD'; // 'ADD' ou 'DEL'
+        let lastScannedCode = '';
+        let lastScannedTime = 0;
+
+        // Générateur de bip audio pour valider les scans sans quitter des yeux la caméra
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playBeep(freq = 600, duration = 0.15) {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sine';
+            osc.frequency.value = freq;
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + duration);
+        }
 
         function saveData() {
             localStorage.setItem('wc2026_album', JSON.stringify(userAlbumData));
@@ -123,7 +152,8 @@
         }
 
         function toggleSticker(id) {
-            userAlbumData[id] = !userAlbumData[id];
+            const currentQty = userAlbumData[id] || 0;
+            userAlbumData[id] = currentQty > 0 ? 0 : 1;
             saveData();
             renderMainContent();
             updateSidebarStats();
@@ -131,7 +161,8 @@
 
         function updateStats() {
             const totalSlots = 19 + (48 * 20);
-            const ownedCount = Object.values(userAlbumData).filter(v => v === true).length;
+            // On considère possédée toute carte ayant une quantité supérieure ou égale à 1
+            const ownedCount = Object.keys(userAlbumData).filter(k => userAlbumData[k] >= 1).length;
             const percent = Math.round((ownedCount / totalSlots) * 100);
             
             document.getElementById('global-progress-text').innerText = `${ownedCount} / ${totalSlots}`;
@@ -139,12 +170,10 @@
             document.getElementById('global-percent').innerText = `${percent}%`;
         }
 
-        // GENERATION DU MENU PAR POULES
         function renderSidebar() {
             const container = document.getElementById('sidebar-nav');
             let html = "";
             
-            // Insertion des pages d'introduction / Légendes au tout début (Style 2 colonnes ramassé)
             html += `
             <div class="mb-4 bg-slate-950/60 p-2 rounded-xl border border-blue-500/30 border-l-4 border-l-blue-500">
                 <div class="text-[10px] font-bold text-blue-400 uppercase tracking-wider mb-1.5 px-1">Intro & Légendes</div>
@@ -162,7 +191,6 @@
 
             html += `<p class="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mt-2 mb-3">Poules Coupe du Monde</p>`;
             
-            // Affichage des Groupes de A à L
             groups.forEach(group => {
                 html += `
                 <div class="mb-4 bg-slate-950/40 p-2 rounded-xl border border-slate-800/60 ${group.color}">
@@ -190,39 +218,43 @@
         }
 
         function updateSidebarStats() {
-            // Stats pour les sections spéciales FWC
             fwcSections.forEach(sec => {
                 let count = 0;
-                sec.slots.forEach(n => { if(userAlbumData[`FWC-${n}`]) count++; });
+                sec.slots.forEach(n => { if((userAlbumData[`FWC-${n}`] || 0) >= 1) count++; });
                 const el = document.getElementById(`side-stat-${sec.id}`);
                 if(el) {
                     el.innerText = `${count}/${sec.slots.length}`;
-                    if(count === sec.slots.length) el.classList.add('bg-green-500/20', 'text-green-400', 'border-green-500/30');
+                    if(count === sec.slots.length) el.className = "text-[9px] bg-green-500/20 text-green-400 border border-green-500/30 px-1 rounded";
                 }
             });
 
-            // Stats pour les pays
             teams.forEach(team => {
                 let count = 0;
-                for(let i=1; i<=20; i++) if(userAlbumData[`${team}-${i}`]) count++;
+                for(let i=1; i<=20; i++) if((userAlbumData[`${team}-${i}`] || 0) >= 1) count++;
                 const el = document.getElementById(`side-stat-${team}`);
                 if(el) {
                     el.innerText = `${count}/20`;
                     if(count === 20) {
-                        el.classList.remove('bg-slate-950', 'text-slate-400', 'border-slate-800');
-                        el.classList.add('bg-green-500/20', 'text-green-400', 'border-green-500/30');
+                        el.className = "text-[9px] bg-green-500/20 text-green-400 border border-green-500/30 px-1 py-0.2 rounded";
+                    } else {
+                        el.className = "text-[9px] bg-slate-950 text-slate-400 border border-slate-800 px-1 py-0.2 rounded";
                     }
                 }
             });
         }
 
         window.changeSection = (id) => {
+            // Arrêter la caméra si on quitte l'espace de scan
+            if (currentSection === 'DOUBLONS_MGR' && id !== 'DOUBLONS_MGR') {
+                stopCamera();
+            }
             currentSection = id;
             renderMainContent();
         }
 
         function createCardElement(id, isSpecial, numStr) {
-            const owned = userAlbumData[id] || false;
+            const qty = userAlbumData[id] || 0;
+            const owned = qty >= 1;
             const card = document.createElement('div');
             const num = parseInt(numStr);
             
@@ -234,7 +266,7 @@
                 gridSpanClass = "col-span-2";
             }
 
-            card.className = `${gridSpanClass} w-full h-full`;
+            card.className = `${gridSpanClass} w-full h-full relative`;
             
             const innerCard = document.createElement('div');
             innerCard.className = `group relative w-full h-full ${aspectClass} rounded-xl border-2 cursor-pointer transition-all duration-300 flex items-center justify-center overflow-hidden
@@ -249,6 +281,14 @@
                     <span class="z-10 oswald text-3xl font-black italic text-white drop-shadow-lg group-hover:scale-110 transition-transform">${numStr}</span>
                     <div class="absolute top-2 left-2 text-[10px] font-bold text-white/50 z-10">${id.split('-')[0]}</div>
                 `;
+                // Badge de quantité si présence de doublons
+                if (qty > 1) {
+                    innerCard.innerHTML += `
+                        <div class="absolute bottom-2 right-2 bg-amber-500 text-slate-950 font-black text-xs px-2 py-0.5 rounded-full z-10 shadow-md">
+                            x${qty}
+                        </div>
+                    `;
+                }
             } else {
                 innerCard.innerHTML = `
                     <div class="text-center p-2 z-10">
@@ -262,7 +302,326 @@
             return card;
         }
 
+        // --- INTERFACE WEB DÉDIÉE AUX DOUBLONS & SCANNER ---
+        function renderDoublonsManager() {
+            const container = document.getElementById('album-book-view');
+            
+            let html = `
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                <div class="lg:col-span-5 bg-slate-900/60 p-6 rounded-2xl border border-slate-800 backdrop-blur-sm flex flex-col gap-4">
+                    <h3 class="oswald text-xl font-bold text-blue-400 uppercase tracking-wide">Scanner de Cartes Panini</h3>
+                    <p class="text-xs text-slate-400">Présentez le dos de votre carte de manière stable face à la caméra. Le système détectera le trigramme et le numéro automatiquement.</p>
+                    
+                    <div class="relative w-full aspect-video bg-slate-950 rounded-xl overflow-hidden border border-slate-800 flex items-center justify-center">
+                        <video id="preview-video" class="w-full h-full object-cover mirror transform scale-x-[-1]" autoplay playsinline></video>
+                        <div id="scan-overlay" class="absolute inset-0 border-2 border-dashed border-slate-700 flex items-center justify-center pointer-events-none transition-colors">
+                            <span id="scan-status" class="bg-slate-950/80 text-[10px] uppercase font-bold tracking-widest px-3 py-1.5 rounded-full text-slate-400">Caméra inactive</span>
+                        </div>
+                    </div>
+
+                    <div class="flex gap-2">
+                        <button id="btn-mode-add" onclick="setScanMode('ADD')" class="flex-1 bg-blue-600 text-white font-black uppercase text-xs py-2.5 rounded-lg transition tracking-wider shadow-md">
+                            ➕ Mode Ajout
+                        </button>
+                        <button id="btn-mode-del" onclick="setScanMode('DEL')" class="flex-1 bg-slate-800 text-slate-400 font-bold uppercase text-xs py-2.5 rounded-lg transition tracking-wider">
+                            ➖ Mode Suppression
+                        </button>
+                    </div>
+
+                    <div class="bg-slate-950 rounded-xl p-3 border border-slate-800 h-28 overflow-y-auto text-xs font-mono custom-scrollbar" id="scan-log">
+                        <div class="text-slate-500">> Système prêt. Cliquez sur "Démarrer" pour scanner.</div>
+                    </div>
+
+                    <button id="btn-toggle-cam" onclick="toggleCamera()" class="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold uppercase text-xs py-3 rounded-xl transition tracking-widest border border-slate-700">
+                        Démarrer la Caméra
+                    </button>
+                </div>
+
+                <div class="lg:col-span-7 bg-slate-900/40 p-6 rounded-2xl border border-slate-800 flex flex-col gap-4">
+                    <h3 class="oswald text-xl font-bold text-amber-500 uppercase tracking-wide">Liste de mes Doublons</h3>
+                    <div id="doublons-list-container" class="flex-1 overflow-y-auto max-h-[500px] pr-2 custom-scrollbar flex flex-col gap-4">
+                        </div>
+                </div>
+            </div>
+            `;
+            
+            container.innerHTML = html;
+            setScanMode('ADD');
+            renderDoublonsList();
+        }
+
+        function renderDoublonsList() {
+            const listContainer = document.getElementById('doublons-list-container');
+            if(!listContainer) return;
+            
+            listContainer.innerHTML = '';
+            let totalDoublonsGlobal = 0;
+
+            // Groupement des doublons par Trigramme Équipe
+            const allTrigrams = ['FWC', ...teams];
+            
+            allTrigrams.forEach(trig => {
+                let teamDoublons = [];
+                // Détermination de la plage de numéros
+                const maxCard = trig === 'FWC' ? 19 : 20;
+                
+                for(let i = 1; i <= maxCard; i++) {
+                    const qty = userAlbumData[`${trig}-${i}`] || 0;
+                    if(qty > 1) { // S'il y en a au moins 2, c'est qu'il y a des doublons
+                        teamDoublons.push({ id: `${trig}-${i}`, cardNum: i, count: qty - 1 });
+                        totalDoublonsGlobal += (qty - 1);
+                    }
+                }
+
+                if(teamDoublons.length > 0) {
+                    // Recherche du nom complet associé au trigramme
+                    let label = "Sélection Spéciale";
+                    groups.forEach(g => {
+                        let t = g.teams.find(tm => tm.id === trig);
+                        if(t) label = t.label;
+                    });
+
+                    const sectionDiv = document.createElement('div');
+                    sectionDiv.className = "bg-slate-950/60 p-3 rounded-xl border border-slate-800";
+                    sectionDiv.innerHTML = `
+                        <div class="flex justify-between items-center mb-2 border-b border-slate-800 pb-1">
+                            <span class="text-xs font-black tracking-wider text-slate-300 uppercase">${label} (${trig})</span>
+                        </div>
+                        <div class="flex flex-wrap gap-2"></div>
+                    `;
+                    
+                    const badgeContainer = sectionDiv.querySelector('div:nth-child(2)');
+                    teamDoublons.forEach(item => {
+                        badgeContainer.innerHTML += `
+                            <div class="bg-slate-900 border border-amber-500/40 text-slate-200 text-xs px-2.5 py-1 rounded-lg flex items-center gap-2 font-bold shadow-inner">
+                                <span class="text-amber-400">#${item.cardNum}</span>
+                                <span class="bg-amber-500/20 text-amber-400 px-1.5 py-0.2 rounded text-[10px] font-black">x${item.count}</span>
+                                <div class="flex gap-0.5 ml-1">
+                                    <button onclick="modifyQty('${item.id}', 1)" class="hover:text-green-400 transition text-[11px]">➕</button>
+                                    <button onclick="modifyQty('${item.id}', -1)" class="hover:text-red-400 transition text-[11px]">➖</button>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    listContainer.appendChild(sectionDiv);
+                }
+            });
+
+            if(totalDoublonsGlobal === 0) {
+                listContainer.innerHTML = `<div class="text-center text-slate-500 text-sm py-8 font-medium">Aucun doublon enregistré pour le moment.</div>`;
+            }
+        }
+
+        window.modifyQty = (id, amount) => {
+            let current = userAlbumData[id] || 0;
+            let target = current + amount;
+            if(target < 0) target = 0;
+            userAlbumData[id] = target;
+            saveData();
+            renderDoublonsList();
+            updateSidebarStats();
+        }
+
+        window.setScanMode = (mode) => {
+            scanMode = mode;
+            const btnAdd = document.getElementById('btn-mode-add');
+            const btnDel = document.getElementById('btn-mode-del');
+            if(!btnAdd || !btnDel) return;
+
+            if(mode === 'ADD') {
+                btnAdd.className = "flex-1 bg-green-600 text-white font-black uppercase text-xs py-2.5 rounded-lg transition tracking-wider shadow-md";
+                btnDel.className = "flex-1 bg-slate-800 text-slate-500 font-bold uppercase text-xs py-2.5 rounded-lg transition tracking-wider";
+            } else {
+                btnAdd.className = "flex-1 bg-slate-800 text-slate-500 font-bold uppercase text-xs py-2.5 rounded-lg transition tracking-wider";
+                btnDel.className = "flex-1 bg-red-600 text-white font-black uppercase text-xs py-2.5 rounded-lg transition tracking-wider shadow-md";
+            }
+        }
+
+        // --- LOGIQUE CAMÉRA & RECONNAISSANCE OPTIQUE (OCR) ---
+        async function initOCR() {
+            if (!ocrWorker) {
+                logScan("Initialisation du moteur d'analyse...", "slate-400");
+                ocrWorker = await Tesseract.createWorker('eng');
+                // Paramétrage restrictif pour optimiser la rapidité et restreindre la recherche aux caractères des cartes
+                await ocrWorker.setParameters({
+                    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-',
+                });
+                logScan("Moteur d'analyse opérationnel.", "green-400");
+            }
+        }
+
+        window.toggleCamera = async () => {
+            if (isScanning) {
+                stopCamera();
+            } else {
+                await startCamera();
+            }
+        }
+
+        async function startCamera() {
+            await initOCR();
+            const video = document.getElementById('preview-video');
+            const hiddenVideo = document.getElementById('video-feed');
+            const statusTag = document.getElementById('scan-status');
+            const toggleBtn = document.getElementById('btn-toggle-cam');
+
+            try {
+                // Requête de flux caméra avec une haute définition native pour une netteté accrue sur les petits textes
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "environment" }
+                });
+                
+                video.srcObject = stream;
+                hiddenVideo.srcObject = stream;
+                isScanning = true;
+                
+                if(statusTag) {
+                    statusTag.innerText = "Recherche active...";
+                    statusTag.className = "bg-green-500 text-slate-950 text-[10px] uppercase font-black tracking-widest px-3 py-1.5 rounded-full shadow-lg animate-pulse";
+                }
+                if(toggleBtn) toggleBtn.innerText = "Arrêter la Caméra";
+                
+                document.getElementById('scan-overlay').classList.remove('border-slate-700');
+                document.getElementById('scan-overlay').classList.add('border-green-500');
+
+                logScan("Flux caméra démarré.", "blue-400");
+                // Lancement de la boucle de capture en continu
+                requestAnimationFrame(processFrame);
+            } catch (err) {
+                console.error(err);
+                logScan("Erreur : Impossible d'accéder à la caméra.", "red-400");
+            }
+        }
+
+        function stopCamera() {
+            const video = document.getElementById('preview-video');
+            const hiddenVideo = document.getElementById('video-feed');
+            const statusTag = document.getElementById('scan-status');
+            const toggleBtn = document.getElementById('btn-toggle-cam');
+
+            if (video && video.srcObject) {
+                video.srcObject.getTracks().forEach(track => track.stop());
+            }
+            if (hiddenVideo && hiddenVideo.srcObject) {
+                hiddenVideo.srcObject.getTracks().forEach(track => track.stop());
+            }
+            
+            isScanning = false;
+            if(statusTag) {
+                statusTag.innerText = "Caméra inactive";
+                statusTag.className = "bg-slate-950/80 text-[10px] uppercase font-bold tracking-widest px-3 py-1.5 rounded-full text-slate-400";
+            }
+            if(toggleBtn) toggleBtn.innerText = "Démarrer la Caméra";
+            
+            const overlay = document.getElementById('scan-overlay');
+            if(overlay) {
+                overlay.classList.remove('border-green-500');
+                overlay.classList.add('border-slate-700');
+            }
+            logScan("Caméra coupée.", "slate-500");
+        }
+
+        // Boucle d'analyse en arrière-plan
+        async function processFrame() {
+            if (!isScanning) return;
+
+            const hiddenVideo = document.getElementById('video-feed');
+            const canvas = document.getElementById('capture-canvas');
+            
+            if (hiddenVideo.readyState === hiddenVideo.HAVE_CURRENT_DATA) {
+                canvas.width = 400; // Largeur contenue pour maximiser la vitesse de traitement OCR
+                canvas.height = (hiddenVideo.videoHeight / hiddenVideo.videoWidth) * canvas.width;
+                
+                const ctx = canvas.getContext('2d');
+                // Capture de la frame vidéo
+                ctx.drawImage(hiddenVideo, 0, 0, canvas.width, canvas.height);
+                
+                try {
+                    const { data: { text } } = await ocrWorker.recognize(canvas);
+                    parseScannedText(text);
+                } catch (e) {
+                    // Erreur silencieuse d'analyse de frame pour ne pas bloquer la boucle
+                }
+            }
+            
+            // Délai d'attente de 250ms avant la frame suivante pour ne pas surcharger le CPU
+            setTimeout(() => {
+                if(isScanning) requestAnimationFrame(processFrame);
+            }, 250);
+        }
+
+        function parseScannedText(rawText) {
+            // Nettoyage de la chaîne de texte lue
+            const cleanText = rawText.toUpperCase().replace(/\s+/g, '');
+            // Pattern regex pour capturer des blocs du type FRA-12 ou FWC-4
+            const regex = /([A-Z]{3})-?([0-9]{1,2})/;
+            const match = cleanText.match(regex);
+
+            if (match) {
+                const trigram = match[1];
+                const num = match[2];
+                const cardId = `${trigram}-${num}`;
+
+                // Validation de la validité du code de carte trouvé
+                const isValidTeam = teams.includes(trigram);
+                const isValidFwc = trigram === 'FWC' && parseInt(num) >= 1 && parseInt(num) <= 19;
+                const isValidNum = parseInt(num) >= 1 && parseInt(num) <= 20;
+
+                if ((isValidTeam && isValidNum) || isValidFwc) {
+                    const now = Date.now();
+                    // Anti-rebond (debounce) : Évite d'enregistrer la même carte en boucle si elle reste devant l'objectif
+                    if (cardId === lastScannedCode && (now - lastScannedTime) < 3000) {
+                        return; 
+                    }
+
+                    lastScannedCode = cardId;
+                    lastScannedTime = now;
+                    executeScanAction(cardId);
+                }
+            }
+        }
+
+        function executeScanAction(cardId) {
+            let currentQty = userAlbumData[cardId] || 0;
+
+            if (scanMode === 'ADD') {
+                userAlbumData[cardId] = currentQty + 1;
+                playBeep(650, 0.12); // Bip aigu de succès
+                logScan(`Ajouté : ${cardId} (Total x${userAlbumData[cardId]})`, "green-400 font-bold");
+            } else {
+                if (currentQty > 0) {
+                    userAlbumData[cardId] = currentQty - 1;
+                    playBeep(400, 0.2); // Bip plus grave pour le retrait
+                    logScan(`Supprimé : ${cardId} (Reste x${userAlbumData[cardId]})`, "red-400 font-bold");
+                } else {
+                    playBeep(250, 0.3); // Alerte d'échec si quantité déjà à 0
+                    logScan(`Impossible de supprimer : ${cardId} est déjà à 0`, "amber-400");
+                }
+            }
+
+            saveData();
+            updateSidebarStats();
+            renderDoublonsList();
+        }
+
+        function logScan(message, tailwindColorClass = "slate-300") {
+            const logBox = document.getElementById('scan-log');
+            if(!logBox) return;
+            const entry = document.createElement('div');
+            entry.className = `text-${tailwindColorClass}`;
+            const time = new Date().toLocaleTimeString('fr-FR');
+            entry.innerText = `[${time}] > ${message}`;
+            logBox.appendChild(entry);
+            logBox.scrollTop = logBox.scrollHeight;
+        }
+
         function renderMainContent() {
+            if (currentSection === 'DOUBLONS_MGR') {
+                document.getElementById('section-title').innerText = "Gestion & Scan des Doublons";
+                renderDoublonsManager();
+                return;
+            }
+
             const bookContainer = document.getElementById('album-book-view');
             const title = document.getElementById('section-title');
             bookContainer.innerHTML = '';
@@ -295,7 +654,6 @@
                 spine.className = "hidden lg:block absolute left-1/2 top-0 bottom-0 w-[2px] bg-gradient-to-b from-transparent via-slate-800 to-transparent transform -translate-x-1/2";
                 bookLayout.appendChild(spine);
 
-                // --- PAGE GAUCHE ---
                 const leftPage = document.createElement('div');
                 leftPage.className = "flex-1 flex flex-col";
                 leftPage.innerHTML = `<div class="oswald text-slate-500 font-bold tracking-widest text-xs mb-4 uppercase border-b border-slate-800/60 pb-2 flex justify-between"><span>Page Gauche</span> <span>${currentSection} 1-10</span></div>`;
@@ -316,7 +674,6 @@
                 }
                 leftPage.appendChild(leftGrid);
 
-                // --- PAGE DROITE ---
                 const rightPage = document.createElement('div');
                 rightPage.className = "flex-1 flex flex-col mt-8 lg:mt-0";
                 rightPage.innerHTML = `<div class="oswald text-slate-500 font-bold tracking-widest text-xs mb-4 uppercase border-b border-slate-800/60 pb-2 flex justify-between"><span>${currentSection} 11-20</span> <span>Page Droite</span></div>`;
@@ -329,7 +686,6 @@
                     rightGrid.appendChild(card);
                 }
 
-                // Espace vide sous la case 14
                 const drawShiftDummy = document.createElement('div');
                 drawShiftDummy.className = "aspect-[3/4] pointer-events-none opacity-0";
                 rightGrid.appendChild(drawShiftDummy);
@@ -347,17 +703,24 @@
             }
         }
 
-        // --- FONCTIONS DE PARTAGE ---
-
+        // --- EXPORT / IMPORT OPTIMISÉS AVEC DESIGN NUMÉRIQUE COMPACT ---
         window.exportData = () => {
-            const dataStr = btoa(JSON.stringify(userAlbumData));
+            // Pour alléger la chaîne finale, on élimine totalement les entrées égales à 0 avant compression
+            const compressedObject = {};
+            Object.keys(userAlbumData).forEach(key => {
+                if (userAlbumData[key] > 0) {
+                    compressedObject[key] = userAlbumData[key];
+                }
+            });
+
+            const dataStr = btoa(JSON.stringify(compressedObject));
             const tempInput = document.createElement('input');
             document.body.appendChild(tempInput);
             tempInput.value = dataStr;
             tempInput.select();
             document.execCommand('copy');
             document.body.removeChild(tempInput);
-            alert("Code de collection copié dans le presse-papier ! Envoie-le à ton frère.");
+            alert("Code de collection (Album + Doublons) copié dans le presse-papier ! Envoie-le à ton frère.");
         };
 
         window.importData = () => {
@@ -365,22 +728,31 @@
             if (code) {
                 try {
                     const decoded = JSON.parse(atob(code));
-                    if (confirm("Voulez-vous fusionner cette collection avec la vôtre ?")) {
-                        userAlbumData = { ...userAlbumData, ...decoded };
+                    if (confirm("Voulez-vous fusionner cette collection et les doublons avec votre liste ?")) {
+                        
+                        // Fusion intelligente des maximums pour l'album et addition/écrasement logique
+                        Object.keys(decoded).forEach(key => {
+                            // On s'assure que le format importé est bien converti en valeur numérique
+                            const importedValue = parseInt(decoded[key]) || 0;
+                            const localValue = userAlbumData[key] || 0;
+                            
+                            // On prend la valeur maximale pour ne perdre aucune carte ni doublon
+                            userAlbumData[key] = Math.max(localValue, importedValue);
+                        });
+
                         saveData();
                         location.reload();
                     }
                 } catch (e) {
-                    alert("Code invalide !");
+                    alert("Code invalide ou corrompu !");
                 }
             }
         };
 
-        // Initialisation
+        // Initialisation globale
         renderSidebar();
         renderMainContent();
         updateStats();
-
     </script>
 </body>
 </html>
