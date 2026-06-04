@@ -86,7 +86,6 @@
         </div>
     </main>
 
-    <video id="video-feed" class="hidden" autoplay playsinline></video>
     <canvas id="capture-canvas" class="hidden"></canvas>
 
     <script>
@@ -123,15 +122,12 @@
         });
 
         let currentSection = 'FWC_INTRO1';
-
-        // Variables Scanner
         let ocrWorker = null;
         let isScanning = false;
         let scanInterval = null;
         let scanMode = 'ADD'; 
         let lastScannedCode = null;
 
-        // Audio Feedback
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         function playBeep(freq = 600, duration = 0.15) {
             const osc = audioCtx.createOscillator();
@@ -145,7 +141,6 @@
             osc.stop(audioCtx.currentTime + duration);
         }
 
-        // --- LOGIQUE CORE ---
         function saveData() {
             localStorage.setItem('wc2026_album', JSON.stringify(userAlbumData));
             updateStats();
@@ -223,11 +218,8 @@
                 const el = document.getElementById(`side-stat-${sec.id}`);
                 if(el) {
                     el.innerText = `${count}/${sec.slots.length}`;
-                    if(count === sec.slots.length) {
-                        el.className = 'text-[9px] bg-green-500/20 px-1 rounded text-green-400 border border-green-500/30';
-                    } else {
-                        el.className = 'text-[9px] bg-slate-950 px-1 rounded text-slate-400 border border-slate-800';
-                    }
+                    if(count === sec.slots.length) el.className = 'text-[9px] bg-green-500/20 px-1 rounded text-green-400 border border-green-500/30';
+                    else el.className = 'text-[9px] bg-slate-950 px-1 rounded text-slate-400 border border-slate-800';
                 }
             });
 
@@ -237,11 +229,8 @@
                 const el = document.getElementById(`side-stat-${team}`);
                 if(el) {
                     el.innerText = `${count}/20`;
-                    if(count === 20) {
-                        el.className = 'text-[9px] bg-green-500/20 px-1 py-0.2 rounded text-green-400 border border-green-500/30';
-                    } else {
-                        el.className = 'text-[9px] bg-slate-950 px-1 py-0.2 rounded text-slate-400 border border-slate-800';
-                    }
+                    if(count === 20) el.className = 'text-[9px] bg-green-500/20 px-1 py-0.2 rounded text-green-400 border border-green-500/30';
+                    else el.className = 'text-[9px] bg-slate-950 px-1 py-0.2 rounded text-slate-400 border border-slate-800';
                 }
             });
         }
@@ -294,7 +283,7 @@
             return card;
         }
 
-        // --- GESTION DES DOUBLONS & OCR ---
+        // --- SCANNER & OCR ---
 
         function setScanMode(mode) {
             scanMode = mode;
@@ -303,11 +292,11 @@
             if(!btnAdd || !btnDel) return;
 
             if(mode === 'ADD') {
-                btnAdd.className = "flex-1 bg-green-600 text-white font-black uppercase text-xs py-2 rounded shadow-md";
-                btnDel.className = "flex-1 bg-slate-800 text-slate-400 font-bold uppercase text-xs py-2 rounded transition";
+                btnAdd.className = "flex-1 bg-green-600 text-white font-black uppercase text-xs py-3 rounded shadow-md";
+                btnDel.className = "flex-1 bg-slate-800 text-slate-400 font-bold uppercase text-xs py-3 rounded transition";
             } else {
-                btnAdd.className = "flex-1 bg-slate-800 text-slate-400 font-bold uppercase text-xs py-2 rounded transition";
-                btnDel.className = "flex-1 bg-red-600 text-white font-black uppercase text-xs py-2 rounded transition shadow-md";
+                btnAdd.className = "flex-1 bg-slate-800 text-slate-400 font-bold uppercase text-xs py-3 rounded transition";
+                btnDel.className = "flex-1 bg-red-600 text-white font-black uppercase text-xs py-3 rounded transition shadow-md";
             }
         }
 
@@ -323,23 +312,24 @@
 
         async function initOCR() {
             if (!ocrWorker) {
-                logEvent("Chargement OCR...", "text-slate-400");
+                logEvent("Chargement du moteur IA...", "text-slate-400");
                 ocrWorker = await Tesseract.createWorker('eng');
                 await ocrWorker.setParameters({
                     tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ ',
                 });
-                logEvent("OCR Prêt.", "text-green-400");
+                logEvent("Scanner Prêt.", "text-green-400");
             }
         }
 
         async function toggleScanner() {
-            if (isScanning) { stopScanner(); } else { await startScanner(); }
+            if (isScanning) stopScanner(); 
+            else await startScanner();
         }
 
         async function startScanner() {
             await initOCR();
+            // On cible directement la vidéo affichée à l'écran !
             const video = document.getElementById('preview-video');
-            const hiddenVideo = document.getElementById('video-feed');
             const btn = document.getElementById('btn-toggle-cam');
 
             try {
@@ -347,11 +337,10 @@
                     video: { facingMode: "environment", width: { ideal: 1280 } }
                 });
                 video.srcObject = stream;
-                hiddenVideo.srcObject = stream;
                 isScanning = true;
                 btn.innerText = "Arrêter la Caméra";
                 btn.classList.replace('bg-slate-800', 'bg-red-800');
-                logEvent("Caméra démarrée. Prise de vue: 1/sec.", "text-blue-400");
+                logEvent("Caméra démarrée.", "text-blue-400");
                 
                 scanInterval = setInterval(processSnapshot, 1000);
             } catch (err) {
@@ -361,41 +350,38 @@
 
         function stopScanner() {
             const video = document.getElementById('preview-video');
-            const hiddenVideo = document.getElementById('video-feed');
             const btn = document.getElementById('btn-toggle-cam');
 
             if (video && video.srcObject) video.srcObject.getTracks().forEach(track => track.stop());
-            if (hiddenVideo && hiddenVideo.srcObject) hiddenVideo.srcObject.getTracks().forEach(track => track.stop());
-            
             isScanning = false;
             clearInterval(scanInterval);
+            
             if(btn) {
                 btn.innerText = "Démarrer la Caméra";
                 btn.classList.replace('bg-red-800', 'bg-slate-800');
             }
+            const debugEl = document.getElementById('debug-ocr');
+            if(debugEl) debugEl.innerText = "Caméra coupée.";
             logEvent("Caméra arrêtée.", "text-slate-500");
         }
 
         async function processSnapshot() {
             if (!isScanning) return;
-            const hiddenVideo = document.getElementById('video-feed');
+            // On capture directement depuis preview-video, fini la vidéo cachée
+            const video = document.getElementById('preview-video');
             const canvas = document.getElementById('capture-canvas');
             
-            if (hiddenVideo.readyState === hiddenVideo.HAVE_CURRENT_DATA) {
+            if (video && video.readyState >= 2) { 
                 canvas.width = 640; 
-                canvas.height = (hiddenVideo.videoHeight / hiddenVideo.videoWidth) * canvas.width;
+                canvas.height = (video.videoHeight / video.videoWidth) * canvas.width;
                 const ctx = canvas.getContext('2d');
-                ctx.drawImage(hiddenVideo, 0, 0, canvas.width, canvas.height);
-                
-                // FINI le filtre binarisation manuel qui détruisait l'image. Tesseract s'en charge.
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
                 try {
                     const { data: { text } } = await ocrWorker.recognize(canvas);
                     if (text) {
-                        // Affichage debug sur la vidéo pour comprendre ce que lit l'IA
                         const debugEl = document.getElementById('debug-ocr');
-                        if(debugEl) debugEl.innerText = "IA lit: " + text.replace(/\n/g, ' ');
-                        
+                        if(debugEl) debugEl.innerText = "IA : " + text.replace(/\n/g, ' - ');
                         parseTextStricte(text);
                     }
                 } catch (e) {}
@@ -405,8 +391,6 @@
         function parseTextStricte(rawText) {
             let cleanText = rawText.toUpperCase().replace(/[^A-Z0-9]/g, '');
             
-            // LA CORRECTION MAJEURE : On boucle sur toutes les correspondances avec le /g
-            // Et on tolère les lettres qui ressemblent aux chiffres grâce aux crochets [0-9SOIZBG]
             const regex = /([A-Z0-9]{3})([0-9SOIZBG]{1,2})/g;
             let matches = [...cleanText.matchAll(regex)];
 
@@ -414,13 +398,11 @@
                 let rawTrigram = match[1];
                 let rawNumStr = match[2];
 
-                // Correction du trigramme (les chiffres deviennent des lettres)
                 let correctedTrigram = rawTrigram
                     .replace(/0/g, 'O').replace(/1/g, 'I').replace(/2/g, 'Z')
                     .replace(/3/g, 'E').replace(/4/g, 'A').replace(/5/g, 'S')
                     .replace(/6/g, 'G').replace(/7/g, 'T').replace(/8/g, 'B');
 
-                // Correction du numéro (les lettres deviennent des chiffres)
                 let correctedNumStr = rawNumStr
                     .replace(/S/g, '5').replace(/O/g, '0').replace(/I/g, '1')
                     .replace(/Z/g, '2').replace(/B/g, '8').replace(/G/g, '6');
@@ -431,7 +413,6 @@
                 const isValidTeam = teams.includes(correctedTrigram) && num >= 1 && num <= 20;
                 const isValidFwc = correctedTrigram === 'FWC' && num >= 1 && num <= 19;
 
-                // Si on a trouvé une vraie carte de l'album, on exécute l'action et on stop la boucle !
                 if (isValidTeam || isValidFwc) {
                     const now = Date.now();
                     if (lastScannedCode && cardId === lastScannedCode.id && (now - lastScannedCode.time) < 1500) return;
@@ -449,15 +430,15 @@
             if (scanMode === 'ADD') {
                 userAlbumData[cardId] = currentQty + 1;
                 playBeep(650, 0.1);
-                logEvent(`➕ ${cardId} scanné. (Total: ${userAlbumData[cardId]})`, "text-green-400 font-bold");
+                logEvent(`➕ ${cardId} ajouté. (Possédée x${userAlbumData[cardId]})`, "text-green-400 font-bold");
             } else {
                 if (currentQty > 0) {
                     userAlbumData[cardId] = currentQty - 1;
                     playBeep(400, 0.15);
-                    logEvent(`➖ ${cardId} supprimé. (Reste: ${userAlbumData[cardId]})`, "text-red-400 font-bold");
+                    logEvent(`➖ ${cardId} retiré. (Possédée x${userAlbumData[cardId]})`, "text-red-400 font-bold");
                 } else {
                     playBeep(200, 0.3);
-                    logEvent(`⚠️ Impossible de supprimer ${cardId}.`, "text-amber-400");
+                    logEvent(`⚠️ Impossible : tu n'as pas la carte ${cardId}.`, "text-amber-400");
                 }
             }
             saveData();
@@ -465,7 +446,7 @@
             renderDoublonsView();
         }
 
-        // --- AFFICHAGE DE LA PAGE DOUBLONS ---
+        // --- INTERFACE DOUBLONS ---
         function renderDoublonsView() {
             if (currentSection !== 'DOUBLONS') return;
             const container = document.getElementById('album-book-view');
@@ -474,17 +455,24 @@
                 container.innerHTML = `
                 <div id="doublons-layout" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800 flex flex-col gap-3">
-                        <div class="relative w-full aspect-video bg-slate-950 rounded-lg overflow-hidden border border-slate-700">
-                            <video id="preview-video" class="w-full h-full object-cover" autoplay playsinline></video>
-                            <div class="absolute bottom-0 left-0 w-full bg-black/80 text-green-400 text-[10px] p-1 font-mono truncate" id="debug-ocr">L'oeil de l'IA : En attente...</div>
+                        <div class="flex gap-2 mb-2">
+                            <button id="btn-mode-add" onclick="setScanMode('ADD')" class="flex-1 bg-green-600 text-white font-black uppercase text-xs py-3 rounded shadow-md">➕ Mode Ajout</button>
+                            <button id="btn-mode-del" onclick="setScanMode('DEL')" class="flex-1 bg-slate-800 text-slate-400 font-bold uppercase text-xs py-3 rounded">➖ Mode Suppression</button>
                         </div>
-                        <div class="flex gap-2">
-                            <button id="btn-mode-add" onclick="setScanMode('ADD')" class="flex-1 bg-green-600 text-white font-black uppercase text-xs py-2 rounded shadow-md">➕ Ajout</button>
-                            <button id="btn-mode-del" onclick="setScanMode('DEL')" class="flex-1 bg-slate-800 text-slate-400 font-bold uppercase text-xs py-2 rounded">➖ Suppression</button>
+                        
+                        <div class="w-full bg-slate-950 rounded-lg overflow-hidden border border-slate-700">
+                            <div id="debug-ocr" class="w-full bg-slate-900 border-b border-slate-800 text-amber-400 text-[10px] p-2 font-mono h-12 overflow-hidden flex items-center">
+                                En attente de scan...
+                            </div>
+                            <div class="relative aspect-video">
+                                <video id="preview-video" class="w-full h-full object-cover" autoplay playsinline></video>
+                            </div>
                         </div>
+
                         <div id="scan-log" class="bg-slate-950 rounded p-2 border border-slate-800 h-24 overflow-y-auto font-mono custom-scrollbar"></div>
-                        <button id="btn-toggle-cam" onclick="toggleScanner()" class="w-full bg-slate-800 text-white font-bold uppercase text-xs py-3 rounded transition border border-slate-700">Démarrer la Caméra</button>
+                        <button id="btn-toggle-cam" onclick="toggleScanner()" class="w-full bg-slate-800 text-white font-bold uppercase text-xs py-3 rounded transition border border-slate-700 shadow-lg">Démarrer la Caméra</button>
                     </div>
+
                     <div class="bg-slate-900/40 p-4 rounded-xl border border-slate-800 flex flex-col">
                         <h3 class="oswald text-lg font-bold text-amber-500 uppercase mb-3">Mes Doublons</h3>
                         <div id="doublons-list" class="flex-1 overflow-y-auto max-h-[60vh] custom-scrollbar flex flex-col gap-3"></div>
@@ -631,7 +619,6 @@
             }
         }
 
-        // --- EXPORT / IMPORT SÉCURISÉ ---
         window.exportData = () => {
             const cleanData = {};
             Object.keys(userAlbumData).forEach(k => {
@@ -667,7 +654,6 @@
             }
         };
 
-        // Initialisation
         renderSidebar();
         renderMainContent();
         updateStats();
