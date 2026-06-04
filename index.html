@@ -498,85 +498,93 @@
         }
 
         async function processFrame() {
-            if (!isScanning) return;
+    if (!isScanning) return;
 
-            const hiddenVideo = document.getElementById('video-feed');
-            const canvas = document.getElementById('capture-canvas');
-            
-            if (hiddenVideo.readyState === hiddenVideo.HAVE_CURRENT_DATA) {
-                canvas.width = 400; 
-                canvas.height = (hiddenVideo.videoHeight / hiddenVideo.videoWidth) * canvas.width;
-                
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(hiddenVideo, 0, 0, canvas.width, canvas.height);
-                
-                // Traitement d'image binarisé à haut contraste
-                try {
-                    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                    const data = imgData.data;
-                    for (let i = 0; i < data.length; i += 4) {
-                        const brightness = 0.34 * data[i] + 0.5 * data[i + 1] + 0.16 * data[i + 2];
-                        const v = (brightness < 120) ? 0 : 255;
-                        data[i] = v; data[i + 1] = v; data[i + 2] = v;
-                    }
-                    ctx.putImageData(imgData, 0, 0);
-
-                    const { data: { text } } = await ocrWorker.recognize(canvas);
-                    parseScannedText(text);
-                } catch (e) {}
+    const hiddenVideo = document.getElementById('video-feed');
+    const canvas = document.getElementById('capture-canvas');
+    
+    if (hiddenVideo.readyState === hiddenVideo.HAVE_CURRENT_DATA) {
+        // Légère augmentation de la taille de capture pour une meilleure netteté des pixels textuels
+        canvas.width = 640; 
+        canvas.height = (hiddenVideo.videoHeight / hiddenVideo.videoWidth) * canvas.width;
+        
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(hiddenVideo, 0, 0, canvas.width, canvas.height);
+        
+        try {
+            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imgData.data;
+            for (let i = 0; i < data.length; i += 4) {
+                // Formule de luminosité perçue
+                const brightness = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+                // Seuil abaissé à 90 pour éliminer efficacement le fond gris de l'encadré Panini
+                const v = (brightness < 90) ? 0 : 255;
+                data[i] = v; data[i + 1] = v; data[i + 2] = v;
             }
-            
-            setTimeout(() => {
-                if(isScanning) requestAnimationFrame(processFrame);
-            }, 250); 
-        }
+            ctx.putImageData(imgData, 0, 0);
 
-        // --- SYSTÈME DE DETECTION MATHÉMATIQUE STRICTE (3 LETTRES + NOMBRE) ---
+            const { data: { text } } = await ocrWorker.recognize(canvas);
+            if (text && text.trim().length > 0) {
+                parseScannedText(text);
+            }
+        } catch (e) {
+            // Échec silencieux de la frame
+        }
+    }
+    
+    // Analyse toutes les 200ms pour être encore plus réactif
+    setTimeout(() => {
+        if(isScanning) requestAnimationFrame(processFrame);
+    }, 200); 
+}
+
         function parseScannedText(rawText) {
-            // 1. Nettoyage et suppression complète de tout ce qui n'est pas lettre ou chiffre
-            let cleanText = rawText.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    // 1. Nettoyage de base (Majuscules et suppression des espaces)
+    let cleanText = rawText.toUpperCase().replace(/\s+/g, '');
 
-            // 2. Recherche du bloc "3 caractères + 1 ou 2 chiffres"
-            let roughMatch = cleanText.match(/^([A-Z0-9]{3})([0-9]{1,2})/);
-            if (!roughMatch) {
-                roughMatch = cleanText.match(/([A-Z0-9]{3})([0-9]{1,2})/);
-                if (!roughMatch) return;
-            }
+    // Log de débug dans la console du téléphone pour voir ce que l'œil de l'IA lit réellement
+    console.log("OCR brute :", cleanText);
 
-            let rawTrigram = roughMatch[1];
-            let rawNumStr = roughMatch[2];
+    // 2. Expression régulière ultra-souple : on cherche 3 caractères alphanumériques SUIVIS de 1 ou 2 chiffres
+    // On ne force plus le début de chaîne (^) pour ignorer le texte "FIFA", "WORLD", "2026" autour.
+    const flexibleMatch = cleanText.match(/([A-Z0-9]{3})[-_]?([0-9]{1,2})/);
+    
+    if (!flexibleMatch) return;
 
-            // 3. Table de correction forcée : Les 3 premiers caractères ne peuvent être que des lettres
-            let correctedTrigram = rawTrigram
-                .replace(/0/g, 'O')
-                .replace(/1/g, 'I')
-                .replace(/2/g, 'Z')
-                .replace(/3/g, 'E')
-                .replace(/4/g, 'A')
-                .replace(/5/g, 'S')
-                .replace(/6/g, 'G')
-                .replace(/7/g, 'T')
-                .replace(/8/g, 'B');
+    let rawTrigram = flexibleMatch[1];
+    let rawNumStr = flexibleMatch[2];
 
-            const num = parseInt(rawNumStr, 10);
-            const cardId = `${correctedTrigram}-${num}`;
+    // 3. Correction stricte du Trigramme (convertit les chiffres mal lus en lettres)
+    let correctedTrigram = rawTrigram
+        .replace(/0/g, 'O')
+        .replace(/1/g, 'I')
+        .replace(/2/g, 'Z')
+        .replace(/3/g, 'E')
+        .replace(/4/g, 'A')
+        .replace(/5/g, 'S')
+        .replace(/6/g, 'G')
+        .replace(/7/g, 'T')
+        .replace(/8/g, 'B');
 
-            // 4. Validation par rapport aux listes réelles
-            const isValidTeam = teams.includes(correctedTrigram);
-            const isValidFwc = correctedTrigram === 'FWC' && num >= 1 && num <= 19;
-            const isValidNum = num >= 1 && num <= 20;
+    const num = parseInt(rawNumStr, 10);
+    const cardId = `${correctedTrigram}-${num}`;
 
-            if ((isValidTeam && isValidNum) || isValidFwc) {
-                const now = Date.now();
-                // Anti-rebond (3 secondes) pour éviter d'ajouter la carte en boucle en restant fixe
-                if (cardId === lastScannedCode && (now - lastScannedTime) < 3000) return; 
+    // 4. Validation finale de la carte avec la base de données de l'album
+    const isValidTeam = teams.includes(correctedTrigram);
+    const isValidFwc = correctedTrigram === 'FWC' && num >= 1 && num <= 19;
+    const isValidNum = num >= 1 && num <= 20;
 
-                lastScannedCode = cardId;
-                lastScannedTime = now;
-                executeScanAction(cardId);
-            }
-        }
+    if ((isValidTeam && isValidNum) || isValidFwc) {
+        const now = Date.now();
+        // Anti-rebond temporaire pour éviter l'effet rafale sur la même carte
+        if (cardId === lastScannedCode && (now - lastScannedTime) < 3000) return; 
 
+        lastScannedCode = cardId;
+        lastScannedTime = now;
+        executeScanAction(cardId);
+    }
+}
+        
         function executeScanAction(cardId) {
             let currentQty = userAlbumData[cardId] || 0;
 
