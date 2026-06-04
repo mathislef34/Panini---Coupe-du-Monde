@@ -117,7 +117,7 @@
         const teams = [];
         groups.forEach(g => g.teams.forEach(t => teams.push(t.id)));
         
-        // --- ADAPTATION STOCKAGE : Conversion Ancien format (boolean) vers Nouveau (nombre entier) ---
+        // Conversion de l'ancien format (boolean) vers le nouveau format numérique
         let userAlbumData = JSON.parse(localStorage.getItem('wc2026_album')) || {};
         Object.keys(userAlbumData).forEach(key => {
             if (typeof userAlbumData[key] === 'boolean') {
@@ -128,11 +128,11 @@
         let currentSection = 'FWC_INTRO1';
         let ocrWorker = null;
         let isScanning = false;
-        let scanMode = 'ADD'; // 'ADD' ou 'DEL'
+        let scanMode = 'ADD'; 
         let lastScannedCode = '';
         let lastScannedTime = 0;
 
-        // Générateur de bip audio pour valider les scans sans quitter des yeux la caméra
+        // Générateur de bip audio
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         function playBeep(freq = 600, duration = 0.15) {
             const osc = audioCtx.createOscillator();
@@ -161,7 +161,6 @@
 
         function updateStats() {
             const totalSlots = 19 + (48 * 20);
-            // On considère possédée toute carte ayant une quantité supérieure ou égale à 1
             const ownedCount = Object.keys(userAlbumData).filter(k => userAlbumData[k] >= 1).length;
             const percent = Math.round((ownedCount / totalSlots) * 100);
             
@@ -244,7 +243,6 @@
         }
 
         window.changeSection = (id) => {
-            // Arrêter la caméra si on quitte l'espace de scan
             if (currentSection === 'DOUBLONS_MGR' && id !== 'DOUBLONS_MGR') {
                 stopCamera();
             }
@@ -281,7 +279,6 @@
                     <span class="z-10 oswald text-3xl font-black italic text-white drop-shadow-lg group-hover:scale-110 transition-transform">${numStr}</span>
                     <div class="absolute top-2 left-2 text-[10px] font-bold text-white/50 z-10">${id.split('-')[0]}</div>
                 `;
-                // Badge de quantité si présence de doublons
                 if (qty > 1) {
                     innerCard.innerHTML += `
                         <div class="absolute bottom-2 right-2 bg-amber-500 text-slate-950 font-black text-xs px-2 py-0.5 rounded-full z-10 shadow-md">
@@ -302,7 +299,7 @@
             return card;
         }
 
-        // --- INTERFACE WEB DÉDIÉE AUX DOUBLONS & SCANNER ---
+        // --- INTERFACE DE GESTION DES DOUBLONS ---
         function renderDoublonsManager() {
             const container = document.getElementById('album-book-view');
             
@@ -356,25 +353,21 @@
             
             listContainer.innerHTML = '';
             let totalDoublonsGlobal = 0;
-
-            // Groupement des doublons par Trigramme Équipe
             const allTrigrams = ['FWC', ...teams];
             
             allTrigrams.forEach(trig => {
                 let teamDoublons = [];
-                // Détermination de la plage de numéros
                 const maxCard = trig === 'FWC' ? 19 : 20;
                 
                 for(let i = 1; i <= maxCard; i++) {
                     const qty = userAlbumData[`${trig}-${i}`] || 0;
-                    if(qty > 1) { // S'il y en a au moins 2, c'est qu'il y a des doublons
+                    if(qty > 1) { 
                         teamDoublons.push({ id: `${trig}-${i}`, cardNum: i, count: qty - 1 });
                         totalDoublonsGlobal += (qty - 1);
                     }
                 }
 
                 if(teamDoublons.length > 0) {
-                    // Recherche du nom complet associé au trigramme
                     let label = "Sélection Spéciale";
                     groups.forEach(g => {
                         let t = g.teams.find(tm => tm.id === trig);
@@ -437,12 +430,11 @@
             }
         }
 
-        // --- LOGIQUE CAMÉRA & RECONNAISSANCE OPTIQUE (OCR) ---
+        // --- TRAITEMENT ET FILTRAGE NUMÉRIQUE DE L'IMAGE POUR MOBILE ---
         async function initOCR() {
             if (!ocrWorker) {
                 logScan("Initialisation du moteur d'analyse...", "slate-400");
                 ocrWorker = await Tesseract.createWorker('eng');
-                // Paramétrage restrictif pour optimiser la rapidité et restreindre la recherche aux caractères des cartes
                 await ocrWorker.setParameters({
                     tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-',
                 });
@@ -466,7 +458,6 @@
             const toggleBtn = document.getElementById('btn-toggle-cam');
 
             try {
-                // Requête de flux caméra avec une haute définition native pour une netteté accrue sur les petits textes
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "environment" }
                 });
@@ -485,7 +476,6 @@
                 document.getElementById('scan-overlay').classList.add('border-green-500');
 
                 logScan("Flux caméra démarré.", "blue-400");
-                // Lancement de la boucle de capture en continu
                 requestAnimationFrame(processFrame);
             } catch (err) {
                 console.error(err);
@@ -521,7 +511,6 @@
             logScan("Caméra coupée.", "slate-500");
         }
 
-        // Boucle d'analyse en arrière-plan
         async function processFrame() {
             if (!isScanning) return;
 
@@ -529,31 +518,41 @@
             const canvas = document.getElementById('capture-canvas');
             
             if (hiddenVideo.readyState === hiddenVideo.HAVE_CURRENT_DATA) {
-                canvas.width = 400; // Largeur contenue pour maximiser la vitesse de traitement OCR
+                canvas.width = 400; 
                 canvas.height = (hiddenVideo.videoHeight / hiddenVideo.videoWidth) * canvas.width;
                 
                 const ctx = canvas.getContext('2d');
-                // Capture de la frame vidéo
                 ctx.drawImage(hiddenVideo, 0, 0, canvas.width, canvas.height);
                 
+                // --- FILTRE BINAIRE DE CONTRASTE ---
                 try {
+                    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    const data = imgData.data;
+                    
+                    for (let i = 0; i < data.length; i += 4) {
+                        const brightness = 0.34 * data[i] + 0.5 * data[i + 1] + 0.16 * data[i + 2];
+                        // Seuil ajusté à 120 pour faire ressortir le texte blanc sur l'encadré sombre
+                        const v = (brightness < 120) ? 0 : 255;
+                        data[i] = v;     
+                        data[i + 1] = v; 
+                        data[i + 2] = v; 
+                    }
+                    ctx.putImageData(imgData, 0, 0);
+
                     const { data: { text } } = await ocrWorker.recognize(canvas);
                     parseScannedText(text);
                 } catch (e) {
-                    // Erreur silencieuse d'analyse de frame pour ne pas bloquer la boucle
+                    // Erreur silencieuse d'analyse
                 }
             }
             
-            // Délai d'attente de 250ms avant la frame suivante pour ne pas surcharger le CPU
             setTimeout(() => {
                 if(isScanning) requestAnimationFrame(processFrame);
-            }, 250);
+            }, 250); 
         }
 
         function parseScannedText(rawText) {
-            // Nettoyage de la chaîne de texte lue
             const cleanText = rawText.toUpperCase().replace(/\s+/g, '');
-            // Pattern regex pour capturer des blocs du type FRA-12 ou FWC-4
             const regex = /([A-Z]{3})-?([0-9]{1,2})/;
             const match = cleanText.match(regex);
 
@@ -562,14 +561,12 @@
                 const num = match[2];
                 const cardId = `${trigram}-${num}`;
 
-                // Validation de la validité du code de carte trouvé
                 const isValidTeam = teams.includes(trigram);
                 const isValidFwc = trigram === 'FWC' && parseInt(num) >= 1 && parseInt(num) <= 19;
                 const isValidNum = parseInt(num) >= 1 && parseInt(num) <= 20;
 
                 if ((isValidTeam && isValidNum) || isValidFwc) {
                     const now = Date.now();
-                    // Anti-rebond (debounce) : Évite d'enregistrer la même carte en boucle si elle reste devant l'objectif
                     if (cardId === lastScannedCode && (now - lastScannedTime) < 3000) {
                         return; 
                     }
@@ -586,15 +583,15 @@
 
             if (scanMode === 'ADD') {
                 userAlbumData[cardId] = currentQty + 1;
-                playBeep(650, 0.12); // Bip aigu de succès
+                playBeep(650, 0.12); 
                 logScan(`Ajouté : ${cardId} (Total x${userAlbumData[cardId]})`, "green-400 font-bold");
             } else {
                 if (currentQty > 0) {
                     userAlbumData[cardId] = currentQty - 1;
-                    playBeep(400, 0.2); // Bip plus grave pour le retrait
+                    playBeep(400, 0.2); 
                     logScan(`Supprimé : ${cardId} (Reste x${userAlbumData[cardId]})`, "red-400 font-bold");
                 } else {
-                    playBeep(250, 0.3); // Alerte d'échec si quantité déjà à 0
+                    playBeep(250, 0.3); 
                     logScan(`Impossible de supprimer : ${cardId} est déjà à 0`, "amber-400");
                 }
             }
@@ -703,9 +700,8 @@
             }
         }
 
-        // --- EXPORT / IMPORT OPTIMISÉS AVEC DESIGN NUMÉRIQUE COMPACT ---
+        // --- EXPORT / IMPORT ---
         window.exportData = () => {
-            // Pour alléger la chaîne finale, on élimine totalement les entrées égales à 0 avant compression
             const compressedObject = {};
             Object.keys(userAlbumData).forEach(key => {
                 if (userAlbumData[key] > 0) {
@@ -729,14 +725,9 @@
                 try {
                     const decoded = JSON.parse(atob(code));
                     if (confirm("Voulez-vous fusionner cette collection et les doublons avec votre liste ?")) {
-                        
-                        // Fusion intelligente des maximums pour l'album et addition/écrasement logique
                         Object.keys(decoded).forEach(key => {
-                            // On s'assure que le format importé est bien converti en valeur numérique
                             const importedValue = parseInt(decoded[key]) || 0;
                             const localValue = userAlbumData[key] || 0;
-                            
-                            // On prend la valeur maximale pour ne perdre aucune carte ni doublon
                             userAlbumData[key] = Math.max(localValue, importedValue);
                         });
 
