@@ -86,6 +86,7 @@
         </div>
     </main>
 
+    <!-- Canvas invisible pour la capture de la zone ciblée -->
     <canvas id="capture-canvas" class="hidden"></canvas>
 
     <script>
@@ -283,7 +284,7 @@
             return card;
         }
 
-        // --- SCANNER & OCR ---
+        // --- SCANNER & OCR (MISE A JOUR CROP) ---
 
         function setScanMode(mode) {
             scanMode = mode;
@@ -328,7 +329,6 @@
 
         async function startScanner() {
             await initOCR();
-            // On cible directement la vidéo affichée à l'écran !
             const video = document.getElementById('preview-video');
             const btn = document.getElementById('btn-toggle-cam');
 
@@ -340,7 +340,7 @@
                 isScanning = true;
                 btn.innerText = "Arrêter la Caméra";
                 btn.classList.replace('bg-slate-800', 'bg-red-800');
-                logEvent("Caméra démarrée.", "text-blue-400");
+                logEvent("Caméra démarrée. Visez avec le cadre vert.", "text-blue-400");
                 
                 scanInterval = setInterval(processSnapshot, 1000);
             } catch (err) {
@@ -367,22 +367,38 @@
 
         async function processSnapshot() {
             if (!isScanning) return;
-            // On capture directement depuis preview-video, fini la vidéo cachée
+            
             const video = document.getElementById('preview-video');
             const canvas = document.getElementById('capture-canvas');
             
             if (video && video.readyState >= 2) { 
-                canvas.width = 640; 
-                canvas.height = (video.videoHeight / video.videoWidth) * canvas.width;
+                const vw = video.videoWidth;
+                const vh = video.videoHeight;
+                
+                // --- LA MAGIE EST ICI : ON COUPE L'IMAGE ---
+                // On simule le rectangle "CIBLE" de l'interface (en haut à droite)
+                // Cela élimine complètement "PANINI" (en bas) et "FIFA" (à gauche)
+                const sx = vw * 0.45; // On commence à 45% de l'image (moitié droite)
+                const sy = vh * 0.05; // On commence à 5% du haut
+                const sWidth = vw * 0.50; // On prend 50% de la largeur
+                const sHeight = vh * 0.40; // On prend 40% de la hauteur
+                
+                canvas.width = sWidth; 
+                canvas.height = sHeight;
                 const ctx = canvas.getContext('2d');
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                
+                // On dessine UNIQUEMENT ce quadrant dans le canvas envoyé à l'IA
+                ctx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, sWidth, sHeight);
 
                 try {
                     const { data: { text } } = await ocrWorker.recognize(canvas);
                     if (text) {
                         const debugEl = document.getElementById('debug-ocr');
-                        if(debugEl) debugEl.innerText = "IA : " + text.replace(/\n/g, ' - ');
+                        if(debugEl) debugEl.innerText = "IA (Zone ciblée) : " + text.replace(/\n/g, ' - ');
                         parseTextStricte(text);
+                    } else {
+                        const debugEl = document.getElementById('debug-ocr');
+                        if(debugEl) debugEl.innerText = "IA (Zone ciblée) : [Rien de lisible]";
                     }
                 } catch (e) {}
             }
@@ -460,13 +476,22 @@
                             <button id="btn-mode-del" onclick="setScanMode('DEL')" class="flex-1 bg-slate-800 text-slate-400 font-bold uppercase text-xs py-3 rounded">➖ Mode Suppression</button>
                         </div>
                         
-                        <div class="w-full bg-slate-950 rounded-lg overflow-hidden border border-slate-700">
-                            <div id="debug-ocr" class="w-full bg-slate-900 border-b border-slate-800 text-amber-400 text-[10px] p-2 font-mono h-12 overflow-hidden flex items-center">
+                        <div class="w-full bg-slate-950 rounded-lg overflow-hidden border border-slate-700 relative">
+                            
+                            <!-- Bandeau Debug pour voir ce que l'IA lit -->
+                            <div id="debug-ocr" class="absolute bottom-0 left-0 w-full bg-black/80 text-amber-400 text-[10px] p-2 font-mono h-12 overflow-hidden flex items-center z-20 pointer-events-none">
                                 En attente de scan...
                             </div>
+                            
                             <div class="relative aspect-video">
                                 <video id="preview-video" class="w-full h-full object-cover" autoplay playsinline></video>
+                                
+                                <!-- ZONE DE VISÉE : Cadre Vert ciblant le quadrant haut-droit -->
+                                <div class="absolute top-[5%] right-[5%] w-[45%] h-[40%] border-2 border-dashed border-green-500 bg-green-500/10 pointer-events-none rounded flex justify-end p-1 z-10 shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]">
+                                    <span class="bg-green-600 text-white text-[8px] font-black px-1 rounded h-fit uppercase tracking-widest">Cible</span>
+                                </div>
                             </div>
+                            
                         </div>
 
                         <div id="scan-log" class="bg-slate-950 rounded p-2 border border-slate-800 h-24 overflow-y-auto font-mono custom-scrollbar"></div>
