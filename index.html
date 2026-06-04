@@ -50,8 +50,8 @@
                 <button onclick="exportData()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-[10px] py-1 rounded uppercase font-bold tracking-widest transition">Exporter</button>
                 <button onclick="importData()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-[10px] py-1 rounded uppercase font-bold tracking-widest transition">Importer</button>
             </div>
-            <button onclick="changeSection('DOUBLONS_MGR')" class="w-full mt-2 bg-gradient-to-r from-amber-600 to-yellow-500 hover:from-amber-500 hover:to-yellow-400 text-white text-xs py-2 rounded uppercase font-black tracking-wider transition shadow-lg">
-                ✨ Scanner & Doublons
+            <button onclick="changeSection('DOUBLONS')" class="w-full mt-2 bg-amber-600 hover:bg-amber-500 text-white text-[11px] py-2 rounded uppercase font-black tracking-widest transition shadow-lg">
+                Scanner & Doublons
             </button>
         </div>
         
@@ -90,7 +90,6 @@
     <canvas id="capture-canvas" class="hidden"></canvas>
 
     <script>
-        // --- DONNÉES DES SECTIONS SPÉCIALES ---
         const fwcSections = [
             { id: 'FWC_INTRO1', label: 'Introduction', slots: [1,2,3,4] },
             { id: 'FWC_INTRO2', label: 'Villes Hôtes', slots: [5,6,7,8] },
@@ -98,7 +97,6 @@
             { id: 'FWC_HIST2', label: 'Légendes II', slots: [14,15,16,17,18,19] }
         ];
 
-        // --- DONNÉES DES GROUPES ---
         const groups = [
             { name: "Groupe A", color: "border-l-4 border-emerald-500", teams: [ {id:"MEX", label:"Mexique"}, {id:"RSA", label:"Afrique du S."}, {id:"KOR", label:"Corée du R."}, {id:"CZE", label:"Tchéquie"} ] },
             { name: "Groupe B", color: "border-l-4 border-red-500", teams: [ {id:"CAN", label:"Canada"}, {id:"BIH", label:"Bosnie-H."}, {id:"QAT", label:"Qatar"}, {id:"SUI", label:"Suisse"} ] },
@@ -117,7 +115,7 @@
         const teams = [];
         groups.forEach(g => g.teams.forEach(t => teams.push(t.id)));
         
-        // --- CHARGEMENT & ADAPTATION FORMAT ---
+        // MIGRATION : Conversion des booléens en entiers (quantité totale)
         let userAlbumData = JSON.parse(localStorage.getItem('wc2026_album')) || {};
         Object.keys(userAlbumData).forEach(key => {
             if (typeof userAlbumData[key] === 'boolean') {
@@ -126,13 +124,15 @@
         });
 
         let currentSection = 'FWC_INTRO1';
+
+        // Variables Scanner
         let ocrWorker = null;
         let isScanning = false;
+        let scanInterval = null;
         let scanMode = 'ADD'; 
         let lastScannedCode = '';
-        let lastScannedTime = 0;
 
-        // Bip audio d'accompagnement
+        // Audio Feedback
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         function playBeep(freq = 600, duration = 0.15) {
             const osc = audioCtx.createOscillator();
@@ -146,6 +146,7 @@
             osc.stop(audioCtx.currentTime + duration);
         }
 
+        // --- LOGIQUE CORE ---
         function saveData() {
             localStorage.setItem('wc2026_album', JSON.stringify(userAlbumData));
             updateStats();
@@ -153,6 +154,8 @@
 
         function toggleSticker(id) {
             const currentQty = userAlbumData[id] || 0;
+            // Dans l'album, on bascule entre "pas possédée" (0) et "possédée au moins 1 fois" (1)
+            // Si on clique pour retirer et qu'on a des doublons, on remet tout à 0.
             userAlbumData[id] = currentQty > 0 ? 0 : 1;
             saveData();
             renderMainContent();
@@ -161,7 +164,8 @@
 
         function updateStats() {
             const totalSlots = 19 + (48 * 20);
-            const ownedCount = Object.keys(userAlbumData).filter(k => userAlbumData[k] >= 1).length;
+            // On compte comme possédée toute carte ayant une quantité >= 1
+            const ownedCount = Object.values(userAlbumData).filter(v => v >= 1).length;
             const percent = Math.round((ownedCount / totalSlots) * 100);
             
             document.getElementById('global-progress-text').innerText = `${ownedCount} / ${totalSlots}`;
@@ -223,7 +227,11 @@
                 const el = document.getElementById(`side-stat-${sec.id}`);
                 if(el) {
                     el.innerText = `${count}/${sec.slots.length}`;
-                    if(count === sec.slots.length) el.className = "text-[9px] bg-green-500/20 text-green-400 border border-green-500/30 px-1 rounded";
+                    if(count === sec.slots.length) {
+                        el.className = 'text-[9px] bg-green-500/20 px-1 rounded text-green-400 border border-green-500/30';
+                    } else {
+                        el.className = 'text-[9px] bg-slate-950 px-1 rounded text-slate-400 border border-slate-800';
+                    }
                 }
             });
 
@@ -234,17 +242,17 @@
                 if(el) {
                     el.innerText = `${count}/20`;
                     if(count === 20) {
-                        el.className = "text-[9px] bg-green-500/20 text-green-400 border border-green-500/30 px-1 py-0.2 rounded";
+                        el.className = 'text-[9px] bg-green-500/20 px-1 py-0.2 rounded text-green-400 border border-green-500/30';
                     } else {
-                        el.className = "text-[9px] bg-slate-950 text-slate-400 border border-slate-800 px-1 py-0.2 rounded";
+                        el.className = 'text-[9px] bg-slate-950 px-1 py-0.2 rounded text-slate-400 border border-slate-800';
                     }
                 }
             });
         }
 
         window.changeSection = (id) => {
-            if (currentSection === 'DOUBLONS_MGR' && id !== 'DOUBLONS_MGR') {
-                stopCamera();
+            if (currentSection === 'DOUBLONS' && id !== 'DOUBLONS') {
+                stopScanner();
             }
             currentSection = id;
             renderMainContent();
@@ -279,13 +287,6 @@
                     <span class="z-10 oswald text-3xl font-black italic text-white drop-shadow-lg group-hover:scale-110 transition-transform">${numStr}</span>
                     <div class="absolute top-2 left-2 text-[10px] font-bold text-white/50 z-10">${id.split('-')[0]}</div>
                 `;
-                if (qty > 1) {
-                    innerCard.innerHTML += `
-                        <div class="absolute bottom-2 right-2 bg-amber-500 text-slate-950 font-black text-xs px-2 py-0.5 rounded-full z-10 shadow-md">
-                            x${qty}
-                        </div>
-                    `;
-                }
             } else {
                 innerCard.innerHTML = `
                     <div class="text-center p-2 z-10">
@@ -299,335 +300,266 @@
             return card;
         }
 
-        // --- INTERFACE DE SCAN & GESTION ---
-        function renderDoublonsManager() {
-            const container = document.getElementById('album-book-view');
-            
-            let html = `
-            <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                <div class="lg:col-span-5 bg-slate-900/60 p-6 rounded-2xl border border-slate-800 backdrop-blur-sm flex flex-col gap-4">
-                    <h3 class="oswald text-xl font-bold text-blue-400 uppercase tracking-wide">Scanner de Cartes Panini</h3>
-                    <p class="text-xs text-slate-400">Présentez le dos de votre carte de manière stable face à la caméra. Le système détectera le trigramme et le numéro automatiquement.</p>
-                    
-                    <div class="relative w-full aspect-video bg-slate-950 rounded-xl overflow-hidden border border-slate-800 flex items-center justify-center">
-                        <video id="preview-video" class="w-full h-full object-cover" autoplay playsinline></video>
-                        <div id="scan-overlay" class="absolute inset-0 border-2 border-dashed border-slate-700 flex items-center justify-center pointer-events-none transition-colors">
-                            <span id="scan-status" class="bg-slate-950/80 text-[10px] uppercase font-bold tracking-widest px-3 py-1.5 rounded-full text-slate-400">Caméra inactive</span>
-                        </div>
-                    </div>
+        // --- GESTION DES DOUBLONS ---
 
-                    <div class="flex gap-2">
-                        <button id="btn-mode-add" onclick="setScanMode('ADD')" class="flex-1 bg-blue-600 text-white font-black uppercase text-xs py-2.5 rounded-lg transition tracking-wider shadow-md">
-                            ➕ Mode Ajout
-                        </button>
-                        <button id="btn-mode-del" onclick="setScanMode('DEL')" class="flex-1 bg-slate-800 text-slate-400 font-bold uppercase text-xs py-2.5 rounded-lg transition tracking-wider">
-                            ➖ Mode Suppression
-                        </button>
-                    </div>
-
-                    <div class="bg-slate-950 rounded-xl p-3 border border-slate-800 h-28 overflow-y-auto text-xs font-mono custom-scrollbar" id="scan-log">
-                        <div class="text-slate-500">> Système prêt. Cliquez sur "Démarrer" pour scanner.</div>
-                    </div>
-
-                    <button id="btn-toggle-cam" onclick="toggleCamera()" class="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold uppercase text-xs py-3 rounded-xl transition tracking-widest border border-slate-700">
-                        Démarrer la Caméra
-                    </button>
-                </div>
-
-                <div class="lg:col-span-7 bg-slate-900/40 p-6 rounded-2xl border border-slate-800 flex flex-col gap-4">
-                    <h3 class="oswald text-xl font-bold text-amber-500 uppercase tracking-wide">Liste de mes Doublons</h3>
-                    <div id="doublons-list-container" class="flex-1 overflow-y-auto max-h-[500px] pr-2 custom-scrollbar flex flex-col gap-4"></div>
-                </div>
-            </div>
-            `;
-            
-            container.innerHTML = html;
-            setScanMode('ADD');
-            renderDoublonsList();
-        }
-
-        function renderDoublonsList() {
-            const listContainer = document.getElementById('doublons-list-container');
-            if(!listContainer) return;
-            
-            listContainer.innerHTML = '';
-            let totalDoublonsGlobal = 0;
-            const allTrigrams = ['FWC', ...teams];
-            
-            allTrigrams.forEach(trig => {
-                let teamDoublons = [];
-                const maxCard = trig === 'FWC' ? 19 : 20;
-                
-                for(let i = 1; i <= maxCard; i++) {
-                    const qty = userAlbumData[`${trig}-${i}`] || 0;
-                    if(qty > 1) {
-                        teamDoublons.push({ id: `${trig}-${i}`, cardNum: i, count: qty - 1 });
-                        totalDoublonsGlobal += (qty - 1);
-                    }
-                }
-
-                if(teamDoublons.length > 0) {
-                    let label = "Sélection Spéciale";
-                    groups.forEach(g => {
-                        let t = g.teams.find(tm => tm.id === trig);
-                        if(t) label = t.label;
-                    });
-
-                    const sectionDiv = document.createElement('div');
-                    sectionDiv.className = "bg-slate-950/60 p-3 rounded-xl border border-slate-800";
-                    sectionDiv.innerHTML = `
-                        <div class="flex justify-between items-center mb-2 border-b border-slate-800 pb-1">
-                            <span class="text-xs font-black tracking-wider text-slate-300 uppercase">${label} (${trig})</span>
-                        </div>
-                        <div class="flex flex-wrap gap-2"></div>
-                    `;
-                    
-                    const badgeContainer = sectionDiv.querySelector('div:nth-child(2)');
-                    teamDoublons.forEach(item => {
-                        badgeContainer.innerHTML += `
-                            <div class="bg-slate-900 border border-amber-500/40 text-slate-200 text-xs px-2.5 py-1 rounded-lg flex items-center gap-2 font-bold shadow-inner">
-                                <span class="text-amber-400">#${item.cardNum}</span>
-                                <span class="bg-amber-500/20 text-amber-400 px-1.5 py-0.2 rounded text-[10px] font-black">x${item.count}</span>
-                                <div class="flex gap-0.5 ml-1">
-                                    <button onclick="modifyQty('${item.id}', 1)" class="hover:text-green-400 transition text-[11px]">➕</button>
-                                    <button onclick="modifyQty('${item.id}', -1)" class="hover:text-red-400 transition text-[11px]">➖</button>
-                                </div>
-                            </div>
-                        `;
-                    });
-                    listContainer.appendChild(sectionDiv);
-                }
-            });
-
-            if(totalDoublonsGlobal === 0) {
-                listContainer.innerHTML = `<div class="text-center text-slate-500 text-sm py-8 font-medium">Aucun doublon enregistré pour le moment.</div>`;
-            }
-        }
-
-        window.modifyQty = (id, amount) => {
-            let current = userAlbumData[id] || 0;
-            let target = current + amount;
-            if(target < 0) target = 0;
-            userAlbumData[id] = target;
-            saveData();
-            renderDoublonsList();
-            updateSidebarStats();
-        }
-
-        window.setScanMode = (mode) => {
+        function setScanMode(mode) {
             scanMode = mode;
             const btnAdd = document.getElementById('btn-mode-add');
             const btnDel = document.getElementById('btn-mode-del');
             if(!btnAdd || !btnDel) return;
 
             if(mode === 'ADD') {
-                btnAdd.className = "flex-1 bg-green-600 text-white font-black uppercase text-xs py-2.5 rounded-lg transition tracking-wider shadow-md";
-                btnDel.className = "flex-1 bg-slate-800 text-slate-500 font-bold uppercase text-xs py-2.5 rounded-lg transition tracking-wider";
+                btnAdd.className = "flex-1 bg-green-600 text-white font-black uppercase text-xs py-2 rounded transition shadow-md";
+                btnDel.className = "flex-1 bg-slate-800 text-slate-400 font-bold uppercase text-xs py-2 rounded transition";
             } else {
-                btnAdd.className = "flex-1 bg-slate-800 text-slate-500 font-bold uppercase text-xs py-2.5 rounded-lg transition tracking-wider";
-                btnDel.className = "flex-1 bg-red-600 text-white font-black uppercase text-xs py-2.5 rounded-lg transition tracking-wider shadow-md";
+                btnAdd.className = "flex-1 bg-slate-800 text-slate-400 font-bold uppercase text-xs py-2 rounded transition";
+                btnDel.className = "flex-1 bg-red-600 text-white font-black uppercase text-xs py-2 rounded transition shadow-md";
             }
         }
 
-        // --- ENTRAÎNEMENT DU CORE OCR ---
+        function logEvent(msg, colorClass = "text-slate-300") {
+            const logBox = document.getElementById('scan-log');
+            if(!logBox) return;
+            const entry = document.createElement('div');
+            entry.className = `text-[10px] ${colorClass}`;
+            entry.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            logBox.appendChild(entry);
+            logBox.scrollTop = logBox.scrollHeight;
+        }
+
         async function initOCR() {
             if (!ocrWorker) {
-                logScan("Initialisation du moteur d'analyse...", "slate-400");
+                logEvent("Chargement OCR...", "text-slate-400");
                 ocrWorker = await Tesseract.createWorker('eng');
                 await ocrWorker.setParameters({
-                    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-',
+                    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ ',
                 });
-                logScan("Moteur d'analyse opérationnel.", "green-400");
+                logEvent("OCR Prêt.", "text-green-400");
             }
         }
 
-        window.toggleCamera = async () => {
-            if (isScanning) { stopCamera(); } else { await startCamera(); }
+        async function toggleScanner() {
+            if (isScanning) {
+                stopScanner();
+            } else {
+                await startScanner();
+            }
         }
 
-        async function startCamera() {
+        async function startScanner() {
             await initOCR();
             const video = document.getElementById('preview-video');
             const hiddenVideo = document.getElementById('video-feed');
-            const statusTag = document.getElementById('scan-status');
-            const toggleBtn = document.getElementById('btn-toggle-cam');
+            const btn = document.getElementById('btn-toggle-cam');
 
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "environment" }
+                    video: { facingMode: "environment", width: { ideal: 1280 } }
                 });
-                
                 video.srcObject = stream;
                 hiddenVideo.srcObject = stream;
                 isScanning = true;
+                btn.innerText = "Arrêter la Caméra";
+                btn.classList.replace('bg-slate-800', 'bg-red-800');
+                logEvent("Caméra démarrée. Prise de vue: 1/sec.", "text-blue-400");
                 
-                if(statusTag) {
-                    statusTag.innerText = "Recherche active...";
-                    statusTag.className = "bg-green-500 text-slate-950 text-[10px] uppercase font-black tracking-widest px-3 py-1.5 rounded-full shadow-lg animate-pulse";
-                }
-                if(toggleBtn) toggleBtn.innerText = "Arrêter la Caméra";
-                
-                document.getElementById('scan-overlay').className = "absolute inset-0 border-2 border-dashed border-green-500 flex items-center justify-center pointer-events-none transition-colors";
-                logScan("Flux caméra démarré.", "blue-400");
-                requestAnimationFrame(processFrame);
+                // Exécution stricte : 1 fois par seconde (1000ms)
+                scanInterval = setInterval(processSnapshot, 1000);
             } catch (err) {
-                console.error(err);
-                logScan("Erreur : Impossible d'accéder à la caméra.", "red-400");
+                logEvent("Erreur d'accès caméra.", "text-red-400");
             }
         }
 
-        function stopCamera() {
+        function stopScanner() {
             const video = document.getElementById('preview-video');
             const hiddenVideo = document.getElementById('video-feed');
-            const statusTag = document.getElementById('scan-status');
-            const toggleBtn = document.getElementById('btn-toggle-cam');
+            const btn = document.getElementById('btn-toggle-cam');
 
             if (video && video.srcObject) video.srcObject.getTracks().forEach(track => track.stop());
             if (hiddenVideo && hiddenVideo.srcObject) hiddenVideo.srcObject.getTracks().forEach(track => track.stop());
             
             isScanning = false;
-            if(statusTag) {
-                statusTag.innerText = "Caméra inactive";
-                statusTag.className = "bg-slate-950/80 text-[10px] uppercase font-bold tracking-widest px-3 py-1.5 rounded-full text-slate-400";
+            clearInterval(scanInterval);
+            if(btn) {
+                btn.innerText = "Démarrer la Caméra";
+                btn.classList.replace('bg-red-800', 'bg-slate-800');
             }
-            if(toggleBtn) toggleBtn.innerText = "Démarrer la Caméra";
+            logEvent("Caméra arrêtée.", "text-slate-500");
+        }
+
+        async function processSnapshot() {
+            if (!isScanning) return;
+            const hiddenVideo = document.getElementById('video-feed');
+            const canvas = document.getElementById('capture-canvas');
             
-            const overlay = document.getElementById('scan-overlay');
-            if(overlay) overlay.className = "absolute inset-0 border-2 border-dashed border-slate-700 flex items-center justify-center pointer-events-none transition-colors";
-            logScan("Caméra coupée.", "slate-500");
+            if (hiddenVideo.readyState === hiddenVideo.HAVE_CURRENT_DATA) {
+                canvas.width = 640; 
+                canvas.height = (hiddenVideo.videoHeight / hiddenVideo.videoWidth) * canvas.width;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(hiddenVideo, 0, 0, canvas.width, canvas.height);
+                
+                // Filtre Binarisation pour tuer le gris
+                const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const data = imgData.data;
+                for (let i = 0; i < data.length; i += 4) {
+                    const brightness = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+                    const v = (brightness < 100) ? 0 : 255;
+                    data[i] = v; data[i + 1] = v; data[i + 2] = v;
+                }
+                ctx.putImageData(imgData, 0, 0);
+
+                try {
+                    const { data: { text } } = await ocrWorker.recognize(canvas);
+                    if (text) parseTextStricte(text);
+                } catch (e) {}
+            }
         }
 
-        async function processFrame() {
-    if (!isScanning) return;
+        function parseTextStricte(rawText) {
+            let cleanText = rawText.toUpperCase().replace(/[^A-Z0-9]/g, '');
+            
+            // On cherche 3 caractères alphanumériques suivis de 1 ou 2 chiffres n'importe où
+            let match = cleanText.match(/([A-Z0-9]{3})([0-9]{1,2})/);
+            if (!match) return;
 
-    const hiddenVideo = document.getElementById('video-feed');
-    const canvas = document.getElementById('capture-canvas');
-    
-    if (hiddenVideo.readyState === hiddenVideo.HAVE_CURRENT_DATA) {
-        // Légère augmentation de la taille de capture pour une meilleure netteté des pixels textuels
-        canvas.width = 640; 
-        canvas.height = (hiddenVideo.videoHeight / hiddenVideo.videoWidth) * canvas.width;
-        
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(hiddenVideo, 0, 0, canvas.width, canvas.height);
-        
-        try {
-            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const data = imgData.data;
-            for (let i = 0; i < data.length; i += 4) {
-                // Formule de luminosité perçue
-                const brightness = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-                // Seuil abaissé à 90 pour éliminer efficacement le fond gris de l'encadré Panini
-                const v = (brightness < 90) ? 0 : 255;
-                data[i] = v; data[i + 1] = v; data[i + 2] = v;
-            }
-            ctx.putImageData(imgData, 0, 0);
+            let rawTrigram = match[1];
+            let numStr = match[2];
 
-            const { data: { text } } = await ocrWorker.recognize(canvas);
-            if (text && text.trim().length > 0) {
-                parseScannedText(text);
+            // Remplacement implacable des confusions de police
+            let correctedTrigram = rawTrigram
+                .replace(/0/g, 'O').replace(/1/g, 'I').replace(/2/g, 'Z')
+                .replace(/3/g, 'E').replace(/4/g, 'A').replace(/5/g, 'S')
+                .replace(/6/g, 'G').replace(/7/g, 'T').replace(/8/g, 'B');
+
+            const num = parseInt(numStr, 10);
+            const cardId = `${correctedTrigram}-${num}`;
+
+            const isValidTeam = teams.includes(correctedTrigram) && num >= 1 && num <= 20;
+            const isValidFwc = correctedTrigram === 'FWC' && num >= 1 && num <= 19;
+
+            if (isValidTeam || isValidFwc) {
+                // Anti-rebond d'1.5s pour éviter les doubles lectures sur la même photo
+                const now = Date.now();
+                if (cardId === lastScannedCode && (now - lastScannedCode.time) < 1500) return;
+                lastScannedCode = { id: cardId, time: now };
+                
+                executeAction(cardId);
             }
-        } catch (e) {
-            // Échec silencieux de la frame
         }
-    }
-    
-    // Analyse toutes les 200ms pour être encore plus réactif
-    setTimeout(() => {
-        if(isScanning) requestAnimationFrame(processFrame);
-    }, 200); 
-}
 
-        function parseScannedText(rawText) {
-    // 1. Nettoyage de base (Majuscules et suppression des espaces)
-    let cleanText = rawText.toUpperCase().replace(/\s+/g, '');
-
-    // Log de débug dans la console du téléphone pour voir ce que l'œil de l'IA lit réellement
-    console.log("OCR brute :", cleanText);
-
-    // 2. Expression régulière ultra-souple : on cherche 3 caractères alphanumériques SUIVIS de 1 ou 2 chiffres
-    // On ne force plus le début de chaîne (^) pour ignorer le texte "FIFA", "WORLD", "2026" autour.
-    const flexibleMatch = cleanText.match(/([A-Z0-9]{3})[-_]?([0-9]{1,2})/);
-    
-    if (!flexibleMatch) return;
-
-    let rawTrigram = flexibleMatch[1];
-    let rawNumStr = flexibleMatch[2];
-
-    // 3. Correction stricte du Trigramme (convertit les chiffres mal lus en lettres)
-    let correctedTrigram = rawTrigram
-        .replace(/0/g, 'O')
-        .replace(/1/g, 'I')
-        .replace(/2/g, 'Z')
-        .replace(/3/g, 'E')
-        .replace(/4/g, 'A')
-        .replace(/5/g, 'S')
-        .replace(/6/g, 'G')
-        .replace(/7/g, 'T')
-        .replace(/8/g, 'B');
-
-    const num = parseInt(rawNumStr, 10);
-    const cardId = `${correctedTrigram}-${num}`;
-
-    // 4. Validation finale de la carte avec la base de données de l'album
-    const isValidTeam = teams.includes(correctedTrigram);
-    const isValidFwc = correctedTrigram === 'FWC' && num >= 1 && num <= 19;
-    const isValidNum = num >= 1 && num <= 20;
-
-    if ((isValidTeam && isValidNum) || isValidFwc) {
-        const now = Date.now();
-        // Anti-rebond temporaire pour éviter l'effet rafale sur la même carte
-        if (cardId === lastScannedCode && (now - lastScannedTime) < 3000) return; 
-
-        lastScannedCode = cardId;
-        lastScannedTime = now;
-        executeScanAction(cardId);
-    }
-}
-        
-        function executeScanAction(cardId) {
+        function executeAction(cardId) {
             let currentQty = userAlbumData[cardId] || 0;
 
             if (scanMode === 'ADD') {
                 userAlbumData[cardId] = currentQty + 1;
-                playBeep(650, 0.12); // Succès : Bip aigu
-                logScan(`Ajouté : ${cardId} (Total x${userAlbumData[cardId]})`, "green-400 font-bold");
+                playBeep(650, 0.1);
+                logEvent(`➕ ${cardId} scanné. (Total: ${userAlbumData[cardId]})`, "text-green-400 font-bold");
             } else {
                 if (currentQty > 0) {
                     userAlbumData[cardId] = currentQty - 1;
-                    playBeep(400, 0.2); // Retrait : Bip plus grave
-                    logScan(`Supprimé : ${cardId} (Reste x${userAlbumData[cardId]})`, "red-400 font-bold");
+                    playBeep(400, 0.15);
+                    logEvent(`➖ ${cardId} supprimé. (Reste: ${userAlbumData[cardId]})`, "text-red-400 font-bold");
                 } else {
-                    playBeep(250, 0.3); // Erreur : Bip d'échec
-                    logScan(`Impossible de supprimer : ${cardId} est déjà à 0`, "amber-400");
+                    playBeep(200, 0.3);
+                    logEvent(`⚠️ Impossible de supprimer ${cardId}.`, "text-amber-400");
                 }
             }
-
             saveData();
             updateSidebarStats();
-            renderDoublonsList();
+            renderDoublonsView();
         }
 
-        function logScan(message, tailwindColorClass = "slate-300") {
-            const logBox = document.getElementById('scan-log');
-            if(!logBox) return;
-            const entry = document.createElement('div');
-            entry.className = `text-${tailwindColorClass}`;
-            const time = new Date().toLocaleTimeString('fr-FR');
-            entry.innerText = `[${time}] > ${message}`;
-            logBox.appendChild(entry);
-            logBox.scrollTop = logBox.scrollHeight;
-        }
-
-        function renderMainContent() {
-            if (currentSection === 'DOUBLONS_MGR') {
-                document.getElementById('section-title').innerText = "Gestion & Scan des Doublons";
-                renderDoublonsManager();
-                return;
+        // --- AFFICHAGE DE LA PAGE DOUBLONS ---
+        function renderDoublonsView() {
+            if (currentSection !== 'DOUBLONS') return;
+            const container = document.getElementById('album-book-view');
+            
+            // Structure si elle n'existe pas encore
+            if (!document.getElementById('doublons-layout')) {
+                container.innerHTML = `
+                <div id="doublons-layout" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800 flex flex-col gap-3">
+                        <div class="w-full aspect-video bg-slate-950 rounded-lg overflow-hidden border border-slate-700">
+                            <video id="preview-video" class="w-full h-full object-cover" autoplay playsinline></video>
+                        </div>
+                        <div class="flex gap-2">
+                            <button id="btn-mode-add" onclick="setScanMode('ADD')" class="flex-1 bg-green-600 text-white font-black uppercase text-xs py-2 rounded shadow-md">➕ Ajout</button>
+                            <button id="btn-mode-del" onclick="setScanMode('DEL')" class="flex-1 bg-slate-800 text-slate-400 font-bold uppercase text-xs py-2 rounded">➖ Suppression</button>
+                        </div>
+                        <div id="scan-log" class="bg-slate-950 rounded p-2 border border-slate-800 h-24 overflow-y-auto font-mono custom-scrollbar"></div>
+                        <button id="btn-toggle-cam" onclick="toggleScanner()" class="w-full bg-slate-800 text-white font-bold uppercase text-xs py-3 rounded transition border border-slate-700">Démarrer la Caméra</button>
+                    </div>
+                    <div class="bg-slate-900/40 p-4 rounded-xl border border-slate-800 flex flex-col">
+                        <h3 class="oswald text-lg font-bold text-amber-500 uppercase mb-3">Mes Doublons</h3>
+                        <div id="doublons-list" class="flex-1 overflow-y-auto max-h-[60vh] custom-scrollbar flex flex-col gap-3"></div>
+                    </div>
+                </div>
+                `;
+                setScanMode(scanMode);
             }
 
+            // Mise à jour de la liste dans l'ordre strict de l'album
+            const listDiv = document.getElementById('doublons-list');
+            listDiv.innerHTML = '';
+            
+            // Ordre : FWC puis les équipes
+            const orderKeys = ['FWC', ...teams];
+            let totalDoublons = 0;
+
+            orderKeys.forEach(trigram => {
+                let itemsHtml = '';
+                const maxNum = trigram === 'FWC' ? 19 : 20;
+                
+                for(let i = 1; i <= maxNum; i++) {
+                    const id = `${trigram}-${i}`;
+                    const qty = userAlbumData[id] || 0;
+                    if (qty > 1) { // >1 car 1 = dans l'album, >=2 = doublons
+                        const doublonCount = qty - 1; 
+                        totalDoublons += doublonCount;
+                        itemsHtml += `
+                            <div class="inline-flex items-center bg-slate-950 border border-slate-700 text-slate-200 text-[11px] px-2 py-1 rounded mr-2 mb-2">
+                                <span class="font-black text-amber-400 mr-1">${trigram} ${i}</span>
+                                <span class="text-slate-400 font-bold">(x${doublonCount})</span>
+                            </div>
+                        `;
+                    }
+                }
+
+                if (itemsHtml !== '') {
+                    // Trouver le nom de la section pour l'affichage
+                    let label = "FWC Spéciales";
+                    if (trigram !== 'FWC') {
+                        groups.forEach(g => {
+                            const t = g.teams.find(x => x.id === trigram);
+                            if(t) label = t.label;
+                        });
+                    }
+
+                    listDiv.innerHTML += `
+                        <div class="bg-slate-900/80 p-2 rounded border border-slate-800">
+                            <div class="text-[10px] uppercase font-bold text-slate-400 mb-2 border-b border-slate-800 pb-1">${label}</div>
+                            <div>${itemsHtml}</div>
+                        </div>
+                    `;
+                }
+            });
+
+            if (totalDoublons === 0) {
+                listDiv.innerHTML = `<div class="text-center text-slate-500 text-xs py-4">Aucun doublon.</div>`;
+            }
+        }
+
+        // --- AFFICHAGE PRINCIPAL ---
+        function renderMainContent() {
             const bookContainer = document.getElementById('album-book-view');
             const title = document.getElementById('section-title');
+            
+            if (currentSection === 'DOUBLONS') {
+                title.innerText = "Gestion des Doublons";
+                renderDoublonsView();
+                return;
+            }
+            
             bookContainer.innerHTML = '';
             
             if (currentSection.startsWith('FWC')) {
@@ -700,30 +632,27 @@
                 }
                 
                 rightPage.appendChild(rightGrid);
-
                 bookLayout.appendChild(leftPage);
                 bookLayout.appendChild(rightPage);
                 bookContainer.appendChild(bookLayout);
             }
         }
 
-        // --- COMPRESSION ET SÉCURISATION DE L'EXPORT ---
+        // --- EXPORT / IMPORT SÉCURISÉ ---
         window.exportData = () => {
-            const compressedObject = {};
-            Object.keys(userAlbumData).forEach(key => {
-                if (userAlbumData[key] > 0) {
-                    compressedObject[key] = userAlbumData[key];
-                }
+            // Nettoyage avant export pour éviter une chaine trop longue
+            const cleanData = {};
+            Object.keys(userAlbumData).forEach(k => {
+                if(userAlbumData[k] > 0) cleanData[k] = userAlbumData[k];
             });
-
-            const dataStr = btoa(JSON.stringify(compressedObject));
+            const dataStr = btoa(JSON.stringify(cleanData));
             const tempInput = document.createElement('input');
             document.body.appendChild(tempInput);
             tempInput.value = dataStr;
             tempInput.select();
             document.execCommand('copy');
             document.body.removeChild(tempInput);
-            alert("Code de collection (Album + Doublons) copié dans le presse-papier ! Envoie-le à ton frère.");
+            alert("Code de collection (avec quantités) copié dans le presse-papier !");
         };
 
         window.importData = () => {
@@ -731,25 +660,27 @@
             if (code) {
                 try {
                     const decoded = JSON.parse(atob(code));
-                    if (confirm("Voulez-vous fusionner cette collection et les doublons avec votre liste ?")) {
+                    if (confirm("Voulez-vous fusionner cette collection avec la vôtre ?")) {
                         Object.keys(decoded).forEach(key => {
-                            const importedValue = parseInt(decoded[key]) || 0;
-                            const localValue = userAlbumData[key] || 0;
-                            userAlbumData[key] = Math.max(localValue, importedValue);
+                            const importedQty = parseInt(decoded[key]) || 0;
+                            const localQty = userAlbumData[key] || 0;
+                            // En cas de fusion, on garde la quantité la plus haute pour ne rien perdre
+                            userAlbumData[key] = Math.max(localQty, importedQty);
                         });
                         saveData();
                         location.reload();
                     }
                 } catch (e) {
-                    alert("Code invalide ou corrompu !");
+                    alert("Code invalide !");
                 }
             }
         };
 
-        // Initialisation globale
+        // Initialisation
         renderSidebar();
         renderMainContent();
         updateStats();
+
     </script>
 </body>
 </html>
