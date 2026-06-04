@@ -115,7 +115,6 @@
         const teams = [];
         groups.forEach(g => g.teams.forEach(t => teams.push(t.id)));
         
-        // MIGRATION : Conversion des booléens en entiers (quantité totale)
         let userAlbumData = JSON.parse(localStorage.getItem('wc2026_album')) || {};
         Object.keys(userAlbumData).forEach(key => {
             if (typeof userAlbumData[key] === 'boolean') {
@@ -130,7 +129,7 @@
         let isScanning = false;
         let scanInterval = null;
         let scanMode = 'ADD'; 
-        let lastScannedCode = '';
+        let lastScannedCode = null;
 
         // Audio Feedback
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -154,8 +153,6 @@
 
         function toggleSticker(id) {
             const currentQty = userAlbumData[id] || 0;
-            // Dans l'album, on bascule entre "pas possédée" (0) et "possédée au moins 1 fois" (1)
-            // Si on clique pour retirer et qu'on a des doublons, on remet tout à 0.
             userAlbumData[id] = currentQty > 0 ? 0 : 1;
             saveData();
             renderMainContent();
@@ -164,7 +161,6 @@
 
         function updateStats() {
             const totalSlots = 19 + (48 * 20);
-            // On compte comme possédée toute carte ayant une quantité >= 1
             const ownedCount = Object.values(userAlbumData).filter(v => v >= 1).length;
             const percent = Math.round((ownedCount / totalSlots) * 100);
             
@@ -251,9 +247,7 @@
         }
 
         window.changeSection = (id) => {
-            if (currentSection === 'DOUBLONS' && id !== 'DOUBLONS') {
-                stopScanner();
-            }
+            if (currentSection === 'DOUBLONS' && id !== 'DOUBLONS') stopScanner();
             currentSection = id;
             renderMainContent();
         }
@@ -300,7 +294,7 @@
             return card;
         }
 
-        // --- GESTION DES DOUBLONS ---
+        // --- GESTION DES DOUBLONS & OCR ---
 
         function setScanMode(mode) {
             scanMode = mode;
@@ -309,7 +303,7 @@
             if(!btnAdd || !btnDel) return;
 
             if(mode === 'ADD') {
-                btnAdd.className = "flex-1 bg-green-600 text-white font-black uppercase text-xs py-2 rounded transition shadow-md";
+                btnAdd.className = "flex-1 bg-green-600 text-white font-black uppercase text-xs py-2 rounded shadow-md";
                 btnDel.className = "flex-1 bg-slate-800 text-slate-400 font-bold uppercase text-xs py-2 rounded transition";
             } else {
                 btnAdd.className = "flex-1 bg-slate-800 text-slate-400 font-bold uppercase text-xs py-2 rounded transition";
@@ -339,11 +333,7 @@
         }
 
         async function toggleScanner() {
-            if (isScanning) {
-                stopScanner();
-            } else {
-                await startScanner();
-            }
+            if (isScanning) { stopScanner(); } else { await startScanner(); }
         }
 
         async function startScanner() {
@@ -363,7 +353,6 @@
                 btn.classList.replace('bg-slate-800', 'bg-red-800');
                 logEvent("Caméra démarrée. Prise de vue: 1/sec.", "text-blue-400");
                 
-                // Exécution stricte : 1 fois par seconde (1000ms)
                 scanInterval = setInterval(processSnapshot, 1000);
             } catch (err) {
                 logEvent("Erreur d'accès caméra.", "text-red-400");
@@ -398,19 +387,17 @@
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(hiddenVideo, 0, 0, canvas.width, canvas.height);
                 
-                // Filtre Binarisation pour tuer le gris
-                const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                const data = imgData.data;
-                for (let i = 0; i < data.length; i += 4) {
-                    const brightness = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-                    const v = (brightness < 100) ? 0 : 255;
-                    data[i] = v; data[i + 1] = v; data[i + 2] = v;
-                }
-                ctx.putImageData(imgData, 0, 0);
+                // FINI le filtre binarisation manuel qui détruisait l'image. Tesseract s'en charge.
 
                 try {
                     const { data: { text } } = await ocrWorker.recognize(canvas);
-                    if (text) parseTextStricte(text);
+                    if (text) {
+                        // Affichage debug sur la vidéo pour comprendre ce que lit l'IA
+                        const debugEl = document.getElementById('debug-ocr');
+                        if(debugEl) debugEl.innerText = "IA lit: " + text.replace(/\n/g, ' ');
+                        
+                        parseTextStricte(text);
+                    }
                 } catch (e) {}
             }
         }
@@ -418,32 +405,41 @@
         function parseTextStricte(rawText) {
             let cleanText = rawText.toUpperCase().replace(/[^A-Z0-9]/g, '');
             
-            // On cherche 3 caractères alphanumériques suivis de 1 ou 2 chiffres n'importe où
-            let match = cleanText.match(/([A-Z0-9]{3})([0-9]{1,2})/);
-            if (!match) return;
+            // LA CORRECTION MAJEURE : On boucle sur toutes les correspondances avec le /g
+            // Et on tolère les lettres qui ressemblent aux chiffres grâce aux crochets [0-9SOIZBG]
+            const regex = /([A-Z0-9]{3})([0-9SOIZBG]{1,2})/g;
+            let matches = [...cleanText.matchAll(regex)];
 
-            let rawTrigram = match[1];
-            let numStr = match[2];
+            for (let match of matches) {
+                let rawTrigram = match[1];
+                let rawNumStr = match[2];
 
-            // Remplacement implacable des confusions de police
-            let correctedTrigram = rawTrigram
-                .replace(/0/g, 'O').replace(/1/g, 'I').replace(/2/g, 'Z')
-                .replace(/3/g, 'E').replace(/4/g, 'A').replace(/5/g, 'S')
-                .replace(/6/g, 'G').replace(/7/g, 'T').replace(/8/g, 'B');
+                // Correction du trigramme (les chiffres deviennent des lettres)
+                let correctedTrigram = rawTrigram
+                    .replace(/0/g, 'O').replace(/1/g, 'I').replace(/2/g, 'Z')
+                    .replace(/3/g, 'E').replace(/4/g, 'A').replace(/5/g, 'S')
+                    .replace(/6/g, 'G').replace(/7/g, 'T').replace(/8/g, 'B');
 
-            const num = parseInt(numStr, 10);
-            const cardId = `${correctedTrigram}-${num}`;
+                // Correction du numéro (les lettres deviennent des chiffres)
+                let correctedNumStr = rawNumStr
+                    .replace(/S/g, '5').replace(/O/g, '0').replace(/I/g, '1')
+                    .replace(/Z/g, '2').replace(/B/g, '8').replace(/G/g, '6');
 
-            const isValidTeam = teams.includes(correctedTrigram) && num >= 1 && num <= 20;
-            const isValidFwc = correctedTrigram === 'FWC' && num >= 1 && num <= 19;
+                const num = parseInt(correctedNumStr, 10);
+                const cardId = `${correctedTrigram}-${num}`;
 
-            if (isValidTeam || isValidFwc) {
-                // Anti-rebond d'1.5s pour éviter les doubles lectures sur la même photo
-                const now = Date.now();
-                if (cardId === lastScannedCode && (now - lastScannedCode.time) < 1500) return;
-                lastScannedCode = { id: cardId, time: now };
-                
-                executeAction(cardId);
+                const isValidTeam = teams.includes(correctedTrigram) && num >= 1 && num <= 20;
+                const isValidFwc = correctedTrigram === 'FWC' && num >= 1 && num <= 19;
+
+                // Si on a trouvé une vraie carte de l'album, on exécute l'action et on stop la boucle !
+                if (isValidTeam || isValidFwc) {
+                    const now = Date.now();
+                    if (lastScannedCode && cardId === lastScannedCode.id && (now - lastScannedCode.time) < 1500) return;
+                    lastScannedCode = { id: cardId, time: now };
+                    
+                    executeAction(cardId);
+                    return;
+                }
             }
         }
 
@@ -474,13 +470,13 @@
             if (currentSection !== 'DOUBLONS') return;
             const container = document.getElementById('album-book-view');
             
-            // Structure si elle n'existe pas encore
             if (!document.getElementById('doublons-layout')) {
                 container.innerHTML = `
                 <div id="doublons-layout" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800 flex flex-col gap-3">
-                        <div class="w-full aspect-video bg-slate-950 rounded-lg overflow-hidden border border-slate-700">
+                        <div class="relative w-full aspect-video bg-slate-950 rounded-lg overflow-hidden border border-slate-700">
                             <video id="preview-video" class="w-full h-full object-cover" autoplay playsinline></video>
+                            <div class="absolute bottom-0 left-0 w-full bg-black/80 text-green-400 text-[10px] p-1 font-mono truncate" id="debug-ocr">L'oeil de l'IA : En attente...</div>
                         </div>
                         <div class="flex gap-2">
                             <button id="btn-mode-add" onclick="setScanMode('ADD')" class="flex-1 bg-green-600 text-white font-black uppercase text-xs py-2 rounded shadow-md">➕ Ajout</button>
@@ -498,11 +494,9 @@
                 setScanMode(scanMode);
             }
 
-            // Mise à jour de la liste dans l'ordre strict de l'album
             const listDiv = document.getElementById('doublons-list');
             listDiv.innerHTML = '';
             
-            // Ordre : FWC puis les équipes
             const orderKeys = ['FWC', ...teams];
             let totalDoublons = 0;
 
@@ -513,7 +507,7 @@
                 for(let i = 1; i <= maxNum; i++) {
                     const id = `${trigram}-${i}`;
                     const qty = userAlbumData[id] || 0;
-                    if (qty > 1) { // >1 car 1 = dans l'album, >=2 = doublons
+                    if (qty > 1) { 
                         const doublonCount = qty - 1; 
                         totalDoublons += doublonCount;
                         itemsHtml += `
@@ -526,7 +520,6 @@
                 }
 
                 if (itemsHtml !== '') {
-                    // Trouver le nom de la section pour l'affichage
                     let label = "FWC Spéciales";
                     if (trigram !== 'FWC') {
                         groups.forEach(g => {
@@ -640,7 +633,6 @@
 
         // --- EXPORT / IMPORT SÉCURISÉ ---
         window.exportData = () => {
-            // Nettoyage avant export pour éviter une chaine trop longue
             const cleanData = {};
             Object.keys(userAlbumData).forEach(k => {
                 if(userAlbumData[k] > 0) cleanData[k] = userAlbumData[k];
@@ -664,7 +656,6 @@
                         Object.keys(decoded).forEach(key => {
                             const importedQty = parseInt(decoded[key]) || 0;
                             const localQty = userAlbumData[key] || 0;
-                            // En cas de fusion, on garde la quantité la plus haute pour ne rien perdre
                             userAlbumData[key] = Math.max(localQty, importedQty);
                         });
                         saveData();
