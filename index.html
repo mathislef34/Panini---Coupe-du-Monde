@@ -86,7 +86,6 @@
         </div>
     </main>
 
-    <!-- Canvas invisible pour la capture de la zone ciblée -->
     <canvas id="capture-canvas" class="hidden"></canvas>
 
     <script>
@@ -284,7 +283,7 @@
             return card;
         }
 
-        // --- SCANNER & OCR (MISE A JOUR CROP) ---
+        // --- SCANNER & OCR ---
 
         function setScanMode(mode) {
             scanMode = mode;
@@ -360,8 +359,8 @@
                 btn.innerText = "Démarrer la Caméra";
                 btn.classList.replace('bg-red-800', 'bg-slate-800');
             }
-            const debugEl = document.getElementById('debug-ocr');
-            if(debugEl) debugEl.innerText = "Caméra coupée.";
+            const debugText = document.getElementById('debug-text');
+            if(debugText) debugText.innerText = "Caméra coupée.";
             logEvent("Caméra arrêtée.", "text-slate-500");
         }
 
@@ -370,35 +369,58 @@
             
             const video = document.getElementById('preview-video');
             const canvas = document.getElementById('capture-canvas');
+            const debugCanvas = document.getElementById('debug-canvas'); // Nouveau mini-écran
             
             if (video && video.readyState >= 2) { 
                 const vw = video.videoWidth;
                 const vh = video.videoHeight;
                 
-                // --- LA MAGIE EST ICI : ON COUPE L'IMAGE ---
-                // On simule le rectangle "CIBLE" de l'interface (en haut à droite)
-                // Cela élimine complètement "PANINI" (en bas) et "FIFA" (à gauche)
-                const sx = vw * 0.45; // On commence à 45% de l'image (moitié droite)
-                const sy = vh * 0.05; // On commence à 5% du haut
-                const sWidth = vw * 0.50; // On prend 50% de la largeur
-                const sHeight = vh * 0.40; // On prend 40% de la hauteur
+                // Crop sur la zone en haut à droite
+                const sx = vw * 0.45; 
+                const sy = vh * 0.05; 
+                const sWidth = vw * 0.50; 
+                const sHeight = vh * 0.40; 
                 
                 canvas.width = sWidth; 
                 canvas.height = sHeight;
                 const ctx = canvas.getContext('2d');
                 
-                // On dessine UNIQUEMENT ce quadrant dans le canvas envoyé à l'IA
                 ctx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, sWidth, sHeight);
+
+                // --- LE FILTRE MAGIQUE : NÉGATIF + BINARISATION ---
+                // On transforme le texte blanc en texte NOIR, et le fond gris en fond BLANC.
+                const imgData = ctx.getImageData(0, 0, sWidth, sHeight);
+                const data = imgData.data;
+                for (let i = 0; i < data.length; i += 4) {
+                    const brightness = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+                    
+                    // Si c'est très clair (le texte blanc), on le rend NOIR (0)
+                    // Si c'est plus sombre (le fond gris), on le rend BLANC (255)
+                    const v = (brightness > 145) ? 0 : 255; 
+                    
+                    data[i] = v;     // R
+                    data[i + 1] = v; // G
+                    data[i + 2] = v; // B
+                }
+                ctx.putImageData(imgData, 0, 0);
+
+                // On affiche ce résultat magique dans le tout petit écran du bandeau !
+                if (debugCanvas) {
+                    debugCanvas.width = sWidth;
+                    debugCanvas.height = sHeight;
+                    debugCanvas.getContext('2d').putImageData(imgData, 0, 0);
+                }
 
                 try {
                     const { data: { text } } = await ocrWorker.recognize(canvas);
-                    if (text) {
-                        const debugEl = document.getElementById('debug-ocr');
-                        if(debugEl) debugEl.innerText = "IA (Zone ciblée) : " + text.replace(/\n/g, ' - ');
+                    const cleanLogs = text.replace(/\n/g, ' ').trim();
+                    const debugText = document.getElementById('debug-text');
+                    
+                    if (cleanLogs) {
+                        if(debugText) debugText.innerText = "L'IA lit : " + cleanLogs;
                         parseTextStricte(text);
                     } else {
-                        const debugEl = document.getElementById('debug-ocr');
-                        if(debugEl) debugEl.innerText = "IA (Zone ciblée) : [Rien de lisible]";
+                        if(debugText) debugText.innerText = "L'IA lit : [Rien]";
                     }
                 } catch (e) {}
             }
@@ -478,15 +500,13 @@
                         
                         <div class="w-full bg-slate-950 rounded-lg overflow-hidden border border-slate-700 relative">
                             
-                            <!-- Bandeau Debug pour voir ce que l'IA lit -->
-                            <div id="debug-ocr" class="absolute bottom-0 left-0 w-full bg-black/80 text-amber-400 text-[10px] p-2 font-mono h-12 overflow-hidden flex items-center z-20 pointer-events-none">
-                                En attente de scan...
+                            <div id="debug-ocr" class="absolute bottom-0 left-0 w-full bg-black/80 text-amber-400 text-[10px] p-2 font-mono flex flex-col justify-center z-20 pointer-events-none">
+                                <span id="debug-text">En attente de scan...</span>
+                                <canvas id="debug-canvas" class="mt-1 h-10 w-fit border border-amber-500/50 bg-white rounded"></canvas>
                             </div>
                             
-                            <div class="relative aspect-video">
-                                <video id="preview-video" class="w-full h-full object-cover" autoplay playsinline></video>
+                            <div class="relative aspect-video pb-16"> <video id="preview-video" class="absolute top-0 left-0 w-full h-full object-cover" autoplay playsinline></video>
                                 
-                                <!-- ZONE DE VISÉE : Cadre Vert ciblant le quadrant haut-droit -->
                                 <div class="absolute top-[5%] right-[5%] w-[45%] h-[40%] border-2 border-dashed border-green-500 bg-green-500/10 pointer-events-none rounded flex justify-end p-1 z-10 shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]">
                                     <span class="bg-green-600 text-white text-[8px] font-black px-1 rounded h-fit uppercase tracking-widest">Cible</span>
                                 </div>
