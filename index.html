@@ -120,10 +120,17 @@
             for(let i=1; i<=20; i++) allCardIds.push(`${t}-${i}`);
         });
         
+        // --- SÉPARATION TOTALE DE L'ALBUM ET DES DOUBLONS ---
         let userAlbumData = JSON.parse(localStorage.getItem('wc2026_album')) || {};
+        let userDoublons = JSON.parse(localStorage.getItem('wc2026_doublons')) || {};
+
+        // SCRIPT DE MIGRATION AUTOMATIQUE (Corrige le bug de la version précédente)
         Object.keys(userAlbumData).forEach(key => {
-            if (typeof userAlbumData[key] === 'boolean') {
-                userAlbumData[key] = userAlbumData[key] ? 1 : 0;
+            if (typeof userAlbumData[key] === 'number') {
+                if (userAlbumData[key] > 1) {
+                    userDoublons[key] = (userDoublons[key] || 0) + (userAlbumData[key] - 1);
+                }
+                userAlbumData[key] = userAlbumData[key] > 0; // Repasse l'album en Vrai/Faux
             }
         });
 
@@ -149,12 +156,13 @@
 
         function saveData() {
             localStorage.setItem('wc2026_album', JSON.stringify(userAlbumData));
+            localStorage.setItem('wc2026_doublons', JSON.stringify(userDoublons));
             updateStats();
         }
 
+        // Clic sur l'album virtuel = on coche/décoche la carte dans l'album
         function toggleSticker(id) {
-            const currentQty = userAlbumData[id] || 0;
-            userAlbumData[id] = currentQty > 0 ? 0 : 1;
+            userAlbumData[id] = !userAlbumData[id];
             saveData();
             renderMainContent();
             updateSidebarStats();
@@ -162,7 +170,7 @@
 
         function updateStats() {
             const totalSlots = 19 + (48 * 20);
-            const ownedCount = Object.values(userAlbumData).filter(v => v >= 1).length;
+            const ownedCount = Object.values(userAlbumData).filter(v => v === true).length;
             const percent = Math.round((ownedCount / totalSlots) * 100);
             
             document.getElementById('global-progress-text').innerText = `${ownedCount} / ${totalSlots}`;
@@ -220,7 +228,7 @@
         function updateSidebarStats() {
             fwcSections.forEach(sec => {
                 let count = 0;
-                sec.slots.forEach(n => { if((userAlbumData[`FWC-${n}`] || 0) >= 1) count++; });
+                sec.slots.forEach(n => { if(userAlbumData[`FWC-${n}`] === true) count++; });
                 const el = document.getElementById(`side-stat-${sec.id}`);
                 if(el) {
                     el.innerText = `${count}/${sec.slots.length}`;
@@ -231,7 +239,7 @@
 
             teams.forEach(team => {
                 let count = 0;
-                for(let i=1; i<=20; i++) if((userAlbumData[`${team}-${i}`] || 0) >= 1) count++;
+                for(let i=1; i<=20; i++) if(userAlbumData[`${team}-${i}`] === true) count++;
                 const el = document.getElementById(`side-stat-${team}`);
                 if(el) {
                     el.innerText = `${count}/20`;
@@ -248,8 +256,8 @@
         }
 
         function createCardElement(id, isSpecial, numStr) {
-            const qty = userAlbumData[id] || 0;
-            const owned = qty >= 1;
+            const owned = userAlbumData[id] === true;
+            const dupQty = userDoublons[id] || 0;
             const card = document.createElement('div');
             const num = parseInt(numStr);
             
@@ -281,6 +289,15 @@
                     <div class="text-center p-2 z-10">
                         <div class="oswald text-slate-600 text-2xl font-bold group-hover:text-slate-400 transition-colors">${numStr}</div>
                         <div class="text-[10px] text-slate-700 font-black tracking-wider uppercase">${id.split('-')[0]}</div>
+                    </div>
+                `;
+            }
+
+            // Affichage de la pastille (x1, x2...) si on a des doublons (qu'on ait validé la carte ou non dans l'album !)
+            if (dupQty > 0) {
+                innerCard.innerHTML += `
+                    <div class="absolute bottom-2 right-2 bg-amber-500 text-slate-950 font-black text-[10px] px-2 py-0.5 rounded-full z-10 shadow-md">
+                        x${dupQty}
                     </div>
                 `;
             }
@@ -458,26 +475,36 @@
             }
         }
 
+        // --- C'EST ICI QUE LES DOUBLONS NE TOUCHENT PLUS A L'ALBUM ---
         function executeAction(cardId, overrideMode = null) {
-            let currentQty = userAlbumData[cardId] || 0;
+            let currentQty = userDoublons[cardId] || 0;
             let activeMode = overrideMode || scanMode;
 
             if (activeMode === 'ADD') {
-                userAlbumData[cardId] = currentQty + 1;
+                userDoublons[cardId] = currentQty + 1;
+                let newQty = userDoublons[cardId];
                 playBeep(650, 0.1);
-                logEvent(`➕ ${cardId} ajouté. (Possédée x${userAlbumData[cardId]})`, "text-green-400 font-bold");
+                
+                logEvent(`➕ ${cardId} ajouté aux DOUBLONS (x${newQty}).`, "text-green-400 font-bold");
+                
             } else {
                 if (currentQty > 0) {
-                    userAlbumData[cardId] = currentQty - 1;
+                    userDoublons[cardId] = currentQty - 1;
+                    let newQty = userDoublons[cardId];
                     playBeep(400, 0.15);
-                    logEvent(`➖ ${cardId} retiré. (Possédée x${userAlbumData[cardId]})`, "text-red-400 font-bold");
+                    
+                    if (newQty === 0) {
+                        logEvent(`➖ ${cardId} n'est plus en doublon.`, "text-red-400 font-bold");
+                    } else {
+                        logEvent(`➖ ${cardId} retiré. (Reste doublon x${newQty})`, "text-orange-400 font-bold");
+                    }
                 } else {
                     playBeep(200, 0.3);
-                    logEvent(`⚠️ Impossible : tu n'as pas la carte ${cardId}.`, "text-amber-400");
+                    logEvent(`⚠️ Impossible : tu n'as pas de doublon pour ${cardId}.`, "text-red-500 font-bold");
                 }
             }
             saveData();
-            updateSidebarStats();
+            // On ne met pas à jour le pourcentage de l'album principal, uniquement l'affichage des doublons
             renderDoublonsView();
         }
 
@@ -580,14 +607,13 @@
                 
                 for(let i = 1; i <= maxNum; i++) {
                     const id = `${trigram}-${i}`;
-                    const qty = userAlbumData[id] || 0;
-                    if (qty > 1) { 
-                        const doublonCount = qty - 1; 
-                        totalDoublons += doublonCount;
+                    const qty = userDoublons[id] || 0;
+                    if (qty > 0) { 
+                        totalDoublons += qty;
                         itemsHtml += `
-                            <div class="inline-flex items-center bg-slate-950 border border-slate-700 text-slate-200 text-[11px] px-2 py-1 rounded mr-2 mb-2">
+                            <div class="inline-flex items-center bg-slate-950 border border-slate-700 text-slate-200 text-[11px] px-2 py-1 rounded mr-2 mb-2 shadow-sm">
                                 <span class="font-black text-amber-400 mr-1">${trigram} ${i}</span>
-                                <span class="text-slate-400 font-bold">(x${doublonCount})</span>
+                                <span class="text-slate-400 font-bold">(x${qty})</span>
                             </div>
                         `;
                     }
@@ -616,6 +642,7 @@
             }
         }
 
+        // --- AFFICHAGE PRINCIPAL ---
         function renderMainContent() {
             const bookContainer = document.getElementById('album-book-view');
             const title = document.getElementById('section-title');
@@ -704,15 +731,18 @@
             }
         }
 
+        // --- EXPORT SÉCURISÉ ALBUM + DOUBLONS ---
         window.exportData = () => {
             let parts = [];
             allCardIds.forEach((id, index) => {
-                let qty = userAlbumData[id] || 0;
-                if (qty > 0) {
-                    if (qty === 1) {
-                        parts.push(index.toString(36));
+                let inAlbum = userAlbumData[id] === true ? 1 : 0;
+                let dupQty = userDoublons[id] || 0;
+
+                if (inAlbum > 0 || dupQty > 0) {
+                    if (inAlbum === 1 && dupQty === 0) {
+                        parts.push(index.toString(36)); // Format ultra-court si juste dans l'album
                     } else {
-                        parts.push(index.toString(36) + '-' + qty);
+                        parts.push(`${index.toString(36)}-${inAlbum}-${dupQty}`); // Format long si doublons
                     }
                 }
             });
@@ -728,34 +758,52 @@
             alert("Code ultra-court copié dans le presse-papier !");
         };
 
+        // --- IMPORT RÉTRO-COMPATIBLE ---
         window.importData = () => {
             const code = prompt("Colle ici le code de collection reçu :");
             if (!code) return;
             
             try {
-                let decodedData = {};
+                let decodedAlbum = {};
+                let decodedDoublons = {};
                 
+                // Si c'est l'ancien code Base64
                 if (code.startsWith('ey') || code.includes('{')) {
                     const jsonStr = code.startsWith('ey') ? atob(code) : code;
-                    decodedData = JSON.parse(jsonStr);
+                    const parsed = JSON.parse(jsonStr);
+                    
+                    Object.keys(parsed).forEach(key => {
+                        if (typeof parsed[key] === 'number') {
+                            decodedAlbum[key] = parsed[key] > 0;
+                            if (parsed[key] > 1) decodedDoublons[key] = parsed[key] - 1;
+                        } else {
+                            decodedAlbum[key] = parsed[key] === true;
+                        }
+                    });
                 } else {
+                    // Lecture du nouveau code compact
                     const parts = code.split('.');
                     parts.forEach(p => {
                         if (!p) return;
                         const split = p.split('-');
                         const index = parseInt(split[0], 36);
-                        const qty = split.length > 1 ? parseInt(split[1], 10) : 1;
+                        const inAlbum = split.length > 1 ? parseInt(split[1], 10) : 1;
+                        const dupQty = split.length > 2 ? parseInt(split[2], 10) : 0;
+
                         if (index >= 0 && index < allCardIds.length) {
-                            decodedData[allCardIds[index]] = qty;
+                            const id = allCardIds[index];
+                            decodedAlbum[id] = inAlbum === 1;
+                            decodedDoublons[id] = dupQty;
                         }
                     });
                 }
 
                 if (confirm("Voulez-vous fusionner cette collection avec la vôtre ?")) {
-                    Object.keys(decodedData).forEach(key => {
-                        const importedQty = parseInt(decodedData[key]) || 0;
-                        const localQty = userAlbumData[key] || 0;
-                        userAlbumData[key] = Math.max(localQty, importedQty); 
+                    Object.keys(decodedAlbum).forEach(key => {
+                        userAlbumData[key] = userAlbumData[key] || decodedAlbum[key];
+                    });
+                    Object.keys(decodedDoublons).forEach(key => {
+                        userDoublons[key] = Math.max(userDoublons[key] || 0, decodedDoublons[key]);
                     });
                     saveData();
                     location.reload();
