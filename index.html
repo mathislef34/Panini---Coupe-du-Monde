@@ -114,8 +114,6 @@
         const teams = [];
         groups.forEach(g => g.teams.forEach(t => teams.push(t.id)));
 
-        // --- GÉNÉRATION D'UN INDEX GLOBAL DE TOUTES LES CARTES ---
-        // Utilisé pour la compression de l'export
         const allCardIds = [];
         for(let i=1; i<=19; i++) allCardIds.push(`FWC-${i}`);
         teams.forEach(t => {
@@ -460,10 +458,12 @@
             }
         }
 
-        function executeAction(cardId) {
+        // Action d'ajout ou de suppression, qui peut être forcée manuellement
+        function executeAction(cardId, overrideMode = null) {
             let currentQty = userAlbumData[cardId] || 0;
+            let activeMode = overrideMode || scanMode;
 
-            if (scanMode === 'ADD') {
+            if (activeMode === 'ADD') {
                 userAlbumData[cardId] = currentQty + 1;
                 playBeep(650, 0.1);
                 logEvent(`➕ ${cardId} ajouté. (Possédée x${userAlbumData[cardId]})`, "text-green-400 font-bold");
@@ -482,12 +482,47 @@
             renderDoublonsView();
         }
 
+        // --- ACTION MANUELLE ---
+        window.manualAction = (mode) => {
+            const trigram = document.getElementById('manual-trigram').value;
+            const numStr = document.getElementById('manual-number').value;
+            const num = parseInt(numStr, 10);
+
+            if (!num || isNaN(num)) {
+                logEvent("⚠️ Numéro invalide pour la saisie manuelle.", "text-amber-400");
+                return;
+            }
+
+            const maxNum = trigram === 'FWC' ? 19 : 20;
+            if (num < 1 || num > maxNum) {
+                logEvent(`⚠️ Numéro invalide pour ${trigram} (Max: ${maxNum}).`, "text-amber-400");
+                return;
+            }
+
+            const cardId = `${trigram}-${num}`;
+            executeAction(cardId, mode);
+            
+            // On vide le champ et on garde le curseur dessus pour enchaîner
+            const inputField = document.getElementById('manual-number');
+            inputField.value = '';
+            inputField.focus();
+        };
+
         // --- INTERFACE DOUBLONS ---
         function renderDoublonsView() {
             if (currentSection !== 'DOUBLONS') return;
             const container = document.getElementById('album-book-view');
             
             if (!document.getElementById('doublons-layout')) {
+                
+                // Génération des options du menu déroulant manuel
+                let optionsHtml = `<option value="FWC">FWC (Spéciales)</option>`;
+                groups.forEach(g => {
+                    g.teams.forEach(t => {
+                        optionsHtml += `<option value="${t.id}">${t.label} (${t.id})</option>`;
+                    });
+                });
+
                 container.innerHTML = `
                 <div id="doublons-layout" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800 flex flex-col gap-3">
@@ -511,6 +546,18 @@
 
                         <div id="scan-log" class="bg-slate-950 rounded p-2 border border-slate-800 h-24 overflow-y-auto font-mono custom-scrollbar"></div>
                         <button id="btn-toggle-cam" onclick="toggleScanner()" class="w-full bg-slate-800 text-white font-bold uppercase text-xs py-3 rounded transition border border-slate-700 shadow-lg">Démarrer la Caméra</button>
+
+                        <div class="mt-2 pt-3 border-t border-slate-700">
+                            <h4 class="text-[10px] font-bold text-slate-400 uppercase mb-2">Saisie Manuelle (Secours)</h4>
+                            <div class="flex gap-2">
+                                <select id="manual-trigram" class="bg-slate-950 border border-slate-700 text-slate-300 text-xs p-2 rounded w-1/2 custom-scrollbar">
+                                    ${optionsHtml}
+                                </select>
+                                <input type="number" id="manual-number" min="1" max="20" placeholder="N°" class="bg-slate-950 border border-slate-700 text-white text-xs p-2 rounded flex-1 text-center" onkeypress="if(event.key==='Enter') manualAction('ADD')">
+                                <button onclick="manualAction('ADD')" class="bg-green-600 hover:bg-green-500 text-white font-black uppercase text-xs px-3 rounded shadow-md transition">➕</button>
+                                <button onclick="manualAction('DEL')" class="bg-red-600 hover:bg-red-500 text-white font-black uppercase text-xs px-3 rounded shadow-md transition">➖</button>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="bg-slate-900/40 p-4 rounded-xl border border-slate-800 flex flex-col">
@@ -522,6 +569,7 @@
                 setScanMode(scanMode);
             }
 
+            // Rafraichissement uniquement de la liste sans toucher à la vidéo ni au formulaire
             const listDiv = document.getElementById('doublons-list');
             listDiv.innerHTML = '';
             
@@ -659,24 +707,20 @@
             }
         }
 
-        // --- NOUVEAU SYSTÈME D'EXPORT ULTRA-COMPACT ---
         window.exportData = () => {
             let parts = [];
-            // On utilise l'index global de la carte pour la transformer en petit numéro
             allCardIds.forEach((id, index) => {
                 let qty = userAlbumData[id] || 0;
                 if (qty > 0) {
                     if (qty === 1) {
                         parts.push(index.toString(36));
                     } else {
-                        // S'il y a un doublon, on attache la quantité avec un tiret
                         parts.push(index.toString(36) + '-' + qty);
                     }
                 }
             });
-            const code = parts.join('.'); // On lie le tout
+            const code = parts.join('.'); 
             
-            // Méthode de copie plus universelle
             const tempInput = document.createElement('textarea');
             document.body.appendChild(tempInput);
             tempInput.value = code;
@@ -687,7 +731,6 @@
             alert("Code ultra-court copié dans le presse-papier !");
         };
 
-        // --- SYSTÈME D'IMPORT RÉTRO-COMPATIBLE ---
         window.importData = () => {
             const code = prompt("Colle ici le code de collection reçu :");
             if (!code) return;
@@ -695,12 +738,10 @@
             try {
                 let decodedData = {};
                 
-                // Détection intelligente de l'ancien format Base64 ou du nouveau format
                 if (code.startsWith('ey') || code.includes('{')) {
                     const jsonStr = code.startsWith('ey') ? atob(code) : code;
                     decodedData = JSON.parse(jsonStr);
                 } else {
-                    // Lecture du nouveau format
                     const parts = code.split('.');
                     parts.forEach(p => {
                         if (!p) return;
@@ -717,7 +758,7 @@
                     Object.keys(decodedData).forEach(key => {
                         const importedQty = parseInt(decodedData[key]) || 0;
                         const localQty = userAlbumData[key] || 0;
-                        userAlbumData[key] = Math.max(localQty, importedQty); // On garde toujours le maximum
+                        userAlbumData[key] = Math.max(localQty, importedQty); 
                     });
                     saveData();
                     location.reload();
