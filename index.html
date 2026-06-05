@@ -458,7 +458,6 @@
             }
         }
 
-        // Action d'ajout ou de suppression, qui peut être forcée manuellement
         function executeAction(cardId, overrideMode = null) {
             let currentQty = userAlbumData[cardId] || 0;
             let activeMode = overrideMode || scanMode;
@@ -484,25 +483,35 @@
 
         // --- ACTION MANUELLE ---
         window.manualAction = (mode) => {
-            const trigram = document.getElementById('manual-trigram').value;
+            const rawTrigram = document.getElementById('manual-trigram').value.trim().toUpperCase();
             const numStr = document.getElementById('manual-number').value;
             const num = parseInt(numStr, 10);
 
+            if (!rawTrigram) {
+                logEvent("⚠️ Trigramme manquant.", "text-amber-400");
+                return;
+            }
+
+            if (rawTrigram !== 'FWC' && !teams.includes(rawTrigram)) {
+                logEvent(`⚠️ Trigramme inconnu : ${rawTrigram}`, "text-amber-400");
+                return;
+            }
+
             if (!num || isNaN(num)) {
-                logEvent("⚠️ Numéro invalide pour la saisie manuelle.", "text-amber-400");
+                logEvent("⚠️ Numéro invalide.", "text-amber-400");
                 return;
             }
 
-            const maxNum = trigram === 'FWC' ? 19 : 20;
+            const maxNum = rawTrigram === 'FWC' ? 19 : 20;
             if (num < 1 || num > maxNum) {
-                logEvent(`⚠️ Numéro invalide pour ${trigram} (Max: ${maxNum}).`, "text-amber-400");
+                logEvent(`⚠️ N° invalide pour ${rawTrigram} (Max: ${maxNum}).`, "text-amber-400");
                 return;
             }
 
-            const cardId = `${trigram}-${num}`;
+            const cardId = `${rawTrigram}-${num}`;
             executeAction(cardId, mode);
             
-            // On vide le champ et on garde le curseur dessus pour enchaîner
+            // On vide le champ numéro, mais on garde le trigramme et le curseur pour enchaîner
             const inputField = document.getElementById('manual-number');
             inputField.value = '';
             inputField.focus();
@@ -514,15 +523,6 @@
             const container = document.getElementById('album-book-view');
             
             if (!document.getElementById('doublons-layout')) {
-                
-                // Génération des options du menu déroulant manuel
-                let optionsHtml = `<option value="FWC">FWC (Spéciales)</option>`;
-                groups.forEach(g => {
-                    g.teams.forEach(t => {
-                        optionsHtml += `<option value="${t.id}">${t.label} (${t.id})</option>`;
-                    });
-                });
-
                 container.innerHTML = `
                 <div id="doublons-layout" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800 flex flex-col gap-3">
@@ -546,14 +546,13 @@
 
                         <div id="scan-log" class="bg-slate-950 rounded p-2 border border-slate-800 h-24 overflow-y-auto font-mono custom-scrollbar"></div>
                         <button id="btn-toggle-cam" onclick="toggleScanner()" class="w-full bg-slate-800 text-white font-bold uppercase text-xs py-3 rounded transition border border-slate-700 shadow-lg">Démarrer la Caméra</button>
-
+                        
+                        <!-- Bloc Saisie Manuelle Rapide -->
                         <div class="mt-2 pt-3 border-t border-slate-700">
-                            <h4 class="text-[10px] font-bold text-slate-400 uppercase mb-2">Saisie Manuelle (Secours)</h4>
+                            <h4 class="text-[10px] font-bold text-slate-400 uppercase mb-2">Saisie Manuelle Rapide</h4>
                             <div class="flex gap-2">
-                                <select id="manual-trigram" class="bg-slate-950 border border-slate-700 text-slate-300 text-xs p-2 rounded w-1/2 custom-scrollbar">
-                                    ${optionsHtml}
-                                </select>
-                                <input type="number" id="manual-number" min="1" max="20" placeholder="N°" class="bg-slate-950 border border-slate-700 text-white text-xs p-2 rounded flex-1 text-center" onkeypress="if(event.key==='Enter') manualAction('ADD')">
+                                <input type="text" id="manual-trigram" placeholder="EX: FRA" maxlength="3" class="bg-slate-950 border border-slate-700 text-white text-xs p-2 rounded w-20 text-center uppercase focus:outline-none focus:border-blue-500" onkeypress="if(event.key==='Enter') document.getElementById('manual-number').focus()">
+                                <input type="number" id="manual-number" min="1" max="20" placeholder="N°" class="bg-slate-950 border border-slate-700 text-white text-xs p-2 rounded flex-1 text-center focus:outline-none focus:border-blue-500" onkeypress="if(event.key==='Enter') manualAction('ADD')">
                                 <button onclick="manualAction('ADD')" class="bg-green-600 hover:bg-green-500 text-white font-black uppercase text-xs px-3 rounded shadow-md transition">➕</button>
                                 <button onclick="manualAction('DEL')" class="bg-red-600 hover:bg-red-500 text-white font-black uppercase text-xs px-3 rounded shadow-md transition">➖</button>
                             </div>
@@ -569,7 +568,6 @@
                 setScanMode(scanMode);
             }
 
-            // Rafraichissement uniquement de la liste sans toucher à la vidéo ni au formulaire
             const listDiv = document.getElementById('doublons-list');
             listDiv.innerHTML = '';
             
@@ -618,7 +616,6 @@
             }
         }
 
-        // --- AFFICHAGE PRINCIPAL ---
         function renderMainContent() {
             const bookContainer = document.getElementById('album-book-view');
             const title = document.getElementById('section-title');
